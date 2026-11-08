@@ -1,0 +1,86 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #333;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.App {
+  width: 100%;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  div[style*="grid-template-columns"] {
+    grid-template-columns: 1fr !important;
+  }
+
+  header {
+    padding: 20px !important;
+  }
+
+  h1 {
+    font-size: 1.5em !important;
+  }
+
+  h3 {
+    font-size: 1em !important;
+  }
+
+  table {
+    font-size: 0.85em;
+  }
+
+  button {
+    font-size: 0.9em;
+  }
+}
+
+/* Utility Classes */
+.hidden {
+  display: none;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.mt-4 {
+  margin-top: 1.5rem;
+}
+
+.mb-4 {
+  margin-bottom: 1.5rem;
+}
+
+.p-4 {
+  padding: 1.5rem;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #667eea;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #764ba2;
+}

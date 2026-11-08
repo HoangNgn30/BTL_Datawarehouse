@@ -1,0 +1,980 @@
+-- ============================================================
+-- SCRIPT TẠO 56 BẢNG CUBOID CHO OLAP_QuanLyBanHang
+-- Source: DW_Core (Fact_BanHang, Fact_Kho + Dim_*)
+-- Chạy sau khi đã: CREATE DATABASE OLAP_QuanLyBanHang
+-- ============================================================
+
+USE OLAP_QuanLyBanHang;
+GO
+
+-- ============================================================
+-- PHẦN 1: SALES CUBE (24 bảng — olap_s_*)
+-- Measures: total_quantity = SUM(so_luong), sum_amount = SUM(tong_tien)
+-- Chiều: Time(4) × Product(2) × Customer(3) = 24
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- 0-D (1 bảng): Apex — tổng toàn bộ
+-- ------------------------------------------------------------
+
+-- [1] olap_s_all
+SELECT
+    SUM(f.so_luong)  AS total_quantity,
+    SUM(f.tong_tien) AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_all
+FROM DW_Core.dbo.Fact_BanHang f;
+
+-- ------------------------------------------------------------
+-- 1-D (6 bảng): Chỉ 1 chiều
+-- ------------------------------------------------------------
+
+-- [2] olap_s_year
+SELECT
+    t.nam                AS year,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+GROUP BY t.nam;
+
+-- [3] olap_s_quarter
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_quarter
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+GROUP BY t.nam, t.quy;
+
+-- [4] olap_s_month
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+GROUP BY t.nam, t.quy, t.thang;
+
+-- [5] olap_s_product
+SELECT
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    mh.kich_co           AS size,
+    mh.gia               AS unit_price,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_product
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_MatHang mh ON f.mh_key = mh.mh_key
+GROUP BY mh.mh_key, mh.mo_ta, mh.kich_co, mh.gia;
+
+-- [6] olap_s_custtype
+SELECT
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
+GROUP BY kh.loai_kh;
+
+-- [7] olap_s_customer
+SELECT
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
+GROUP BY kh.kh_key, kh.ten, kh.loai_kh;
+
+-- ------------------------------------------------------------
+-- 2-D (12 bảng): 2 chiều kết hợp
+-- ------------------------------------------------------------
+
+-- [8] olap_s_year_product
+SELECT
+    t.nam                AS year,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year_product
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+GROUP BY t.nam, mh.mh_key, mh.mo_ta;
+
+-- [9] olap_s_quarter_product
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_quarter_product
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta;
+
+-- [10] olap_s_month_product
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month_product
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta;
+
+-- [11] olap_s_year_custtype
+SELECT
+    t.nam                AS year,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, kh.loai_kh;
+
+-- [12] olap_s_quarter_custtype
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_quarter_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, kh.loai_kh;
+
+-- [13] olap_s_month_custtype
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, t.thang, kh.loai_kh;
+
+-- [14] olap_s_year_customer
+SELECT
+    t.nam                AS year,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, kh.kh_key, kh.ten, kh.loai_kh;
+
+-- [15] olap_s_quarter_customer
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_quarter_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, kh.kh_key, kh.ten, kh.loai_kh;
+
+-- [16] olap_s_month_customer
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, t.thang, kh.kh_key, kh.ten, kh.loai_kh;
+
+-- [17] olap_s_product_custtype
+SELECT
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_product_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
+GROUP BY mh.mh_key, mh.mo_ta, kh.loai_kh;
+
+-- [18] olap_s_product_customer
+SELECT
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_product_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
+GROUP BY mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh;
+
+-- [19] olap_s_custtype_customer
+SELECT
+    kh.loai_kh           AS customer_type,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_custtype_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
+GROUP BY kh.loai_kh, kh.kh_key, kh.ten;
+
+-- ------------------------------------------------------------
+-- 3-D (5 bảng): Base cuboids chi tiết nhất
+-- ------------------------------------------------------------
+
+-- [20] olap_s_year_product_custtype
+SELECT
+    t.nam                AS year,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year_product_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang    mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, mh.mh_key, mh.mo_ta, kh.loai_kh;
+
+-- [21] olap_s_quarter_product_custtype
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_quarter_product_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang    mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.loai_kh;
+
+-- [22] olap_s_month_product_custtype
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month_product_custtype
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang    mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, kh.loai_kh;
+
+-- [23] olap_s_year_product_customer
+SELECT
+    t.nam                AS year,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_year_product_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang    mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh;
+
+-- [24] olap_s_month_product_customer
+SELECT
+    t.nam                AS year,
+    t.quy                AS quarter,
+    t.thang              AS month,
+    mh.mh_key            AS product_key,
+    mh.mo_ta             AS description,
+    kh.kh_key            AS customer_key,
+    kh.ten               AS customer_name,
+    kh.loai_kh           AS customer_type,
+    SUM(f.so_luong)      AS total_quantity,
+    SUM(f.tong_tien)     AS sum_amount
+INTO OLAP_QuanLyBanHang.dbo.olap_s_month_product_customer
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian   t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang    mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang  kh ON f.kh_key   = kh.kh_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh;
+
+
+-- ============================================================
+-- PHẦN 2: INVENTORY CUBE (32 bảng — olap_i_*)
+-- Measure: total_quantity_on_hand = SUM(so_luong) của snapshot mới nhất
+-- Chiều: Time(4) × Product(2) × Store(4) = 32
+-- LƯU Ý: Dùng subquery lấy MAX(time_key) trong khoảng thời gian đó
+-- ============================================================
+
+-- ------------------------------------------------------------
+-- HELPER: CTE pattern dùng lại cho snapshot logic
+-- Mỗi cuboid sẽ tự inline subquery tương ứng
+-- ------------------------------------------------------------
+
+-- 0-D (1 bảng)
+-- ------------------------------------------------------------
+
+-- [25] olap_i_all — snapshot mới nhất toàn hệ thống
+SELECT
+    SUM(f.so_luong) AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_all
+FROM DW_Core.dbo.Fact_Kho f
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+);
+
+-- ------------------------------------------------------------
+-- 1-D (7 bảng)
+-- ------------------------------------------------------------
+
+-- [26] olap_i_year
+SELECT
+    t.nam               AS year,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam;
+
+-- [27] olap_i_quarter
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy;
+
+-- [28] olap_i_month
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+GROUP BY t.nam, t.quy, t.thang;
+-- (month level: mỗi tháng chỉ có 1 snapshot → SUM trực tiếp)
+
+-- [29] olap_i_product
+SELECT
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_product
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_MatHang mh ON f.mh_key = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY mh.mh_key, mh.mo_ta;
+
+-- [30] olap_i_state
+SELECT
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_CuaHang ch ON f.ch_key = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD    vp ON ch.vp_key = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY vp.bang;
+
+-- [31] olap_i_city
+SELECT
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_CuaHang ch ON f.ch_key = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD    vp ON ch.vp_key = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY vp.bang, vp.ten_tp;
+
+-- [32] olap_i_store
+SELECT
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_store
+FROM DW_Core.dbo.Fact_Kho f
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY f.ch_key;
+
+-- ------------------------------------------------------------
+-- 2-D (15 bảng)
+-- ------------------------------------------------------------
+
+-- [33] olap_i_year_product
+SELECT
+    t.nam               AS year,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_product
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, mh.mh_key, mh.mo_ta;
+
+-- [34] olap_i_quarter_product
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_product
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta;
+
+-- [35] olap_i_month_product
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_product
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta;
+
+-- [36] olap_i_year_state
+SELECT
+    t.nam               AS year,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, vp.bang;
+
+-- [37] olap_i_quarter_state
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, vp.bang;
+
+-- [38] olap_i_month_state
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+GROUP BY t.nam, t.quy, t.thang, vp.bang;
+
+-- [39] olap_i_year_city
+SELECT
+    t.nam               AS year,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, vp.bang, vp.ten_tp;
+
+-- [40] olap_i_quarter_city
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, vp.bang, vp.ten_tp;
+
+-- [41] olap_i_month_city
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+GROUP BY t.nam, t.quy, t.thang, vp.bang, vp.ten_tp;
+
+-- [42] olap_i_year_store
+SELECT
+    t.nam               AS year,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, f.ch_key;
+
+-- [43] olap_i_quarter_store
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, f.ch_key;
+
+-- [44] olap_i_month_store
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON f.time_key = t.time_key
+GROUP BY t.nam, t.quy, t.thang, f.ch_key;
+
+-- [45] olap_i_product_state
+SELECT
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_product_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key  = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key  = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY mh.mh_key, mh.mo_ta, vp.bang;
+
+-- [46] olap_i_product_city
+SELECT
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_product_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key  = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key  = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY mh.mh_key, mh.mo_ta, vp.bang, vp.ten_tp;
+
+-- [47] olap_i_product_store
+SELECT
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_product_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_MatHang mh ON f.mh_key = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+)
+GROUP BY mh.mh_key, mh.mo_ta, f.ch_key;
+
+-- ------------------------------------------------------------
+-- 3-D (9 bảng): Base cuboids chi tiết nhất
+-- ------------------------------------------------------------
+
+-- [48] olap_i_year_product_state
+SELECT
+    t.nam               AS year,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_product_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, mh.mh_key, mh.mo_ta, vp.bang;
+
+-- [49] olap_i_quarter_product_state
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_product_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, vp.bang;
+
+-- [50] olap_i_month_product_state
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_product_state
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, vp.bang;
+
+-- [51] olap_i_year_product_city
+SELECT
+    t.nam               AS year,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_product_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, mh.mh_key, mh.mo_ta, vp.bang, vp.ten_tp;
+
+-- [52] olap_i_quarter_product_city
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_product_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, vp.bang, vp.ten_tp;
+
+-- [53] olap_i_month_product_city
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    vp.bang             AS state,
+    vp.ten_tp           AS city,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_product_city
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+JOIN DW_Core.dbo.Dim_CuaHang  ch ON f.ch_key   = ch.ch_key
+JOIN DW_Core.dbo.Dim_VPDD     vp ON ch.vp_key  = vp.vp_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, vp.bang, vp.ten_tp;
+
+-- [54] olap_i_year_product_store
+SELECT
+    t.nam               AS year,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_year_product_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND f2.time_key / 100 = t.nam
+)
+GROUP BY t.nam, mh.mh_key, mh.mo_ta, f.ch_key;
+
+-- [55] olap_i_quarter_product_store
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_quarter_product_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+WHERE f.time_key = (
+    SELECT MAX(f2.time_key)
+    FROM DW_Core.dbo.Fact_Kho f2
+    JOIN DW_Core.dbo.Dim_ThoiGian t2 ON f2.time_key = t2.time_key
+    WHERE f2.ch_key = f.ch_key
+      AND f2.mh_key = f.mh_key
+      AND t2.nam = t.nam
+      AND t2.quy = t.quy
+)
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, f.ch_key;
+
+-- [56] olap_i_month_product_store
+SELECT
+    t.nam               AS year,
+    t.quy               AS quarter,
+    t.thang             AS month,
+    mh.mh_key           AS product_key,
+    mh.mo_ta            AS description,
+    f.ch_key            AS store_key,
+    SUM(f.so_luong)     AS total_quantity_on_hand
+INTO OLAP_QuanLyBanHang.dbo.olap_i_month_product_store
+FROM DW_Core.dbo.Fact_Kho f
+JOIN DW_Core.dbo.Dim_ThoiGian t  ON f.time_key = t.time_key
+JOIN DW_Core.dbo.Dim_MatHang  mh ON f.mh_key   = mh.mh_key
+GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, f.ch_key;
+
+-- ============================================================
+-- VERIFY: Đếm số bảng đã tạo
+-- ============================================================
+SELECT COUNT(*) AS tong_so_bang
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_TYPE = 'BASE TABLE';
+
+-- Liệt kê tất cả tên bảng
+SELECT TABLE_NAME
+FROM INFORMATION_SCHEMA.TABLES
+WHERE TABLE_TYPE = 'BASE TABLE'
+ORDER BY TABLE_NAME;
