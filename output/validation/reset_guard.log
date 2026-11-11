@@ -1,0 +1,4 @@
+>> D:\KDL&KPDL\BTL_Datawarehouse\sql\01_idb_source.sql
+Changed database context to 'master'.
+Msg 51000, Level 16, State 1, Server DanhLe\MSSQLSERVER01, Line 2
+CSDL nguon da ton tai. Chi dung ResetDemo=1 voi du lieu demo co the tao lai.

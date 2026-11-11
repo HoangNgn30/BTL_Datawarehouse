@@ -1,0 +1,33 @@
+name: kdl-oracle
+services:
+  oracle:
+    image: gvenzl/oracle-free:23-slim@sha256:6d61d267a3b978c24c5ac1790e62e927416a0aec446bd86e4b3a1527562757bd
+    container_name: kdl-oracle
+    ports:
+      - "127.0.0.1:1522:1521"
+    environment:
+      ORACLE_PASSWORD_FILE: /run/secrets/admin_password
+      APP_USER: KDL_VPDD
+      APP_USER_PASSWORD_FILE: /run/secrets/app_password
+    secrets:
+      - admin_password
+      - app_password
+    volumes:
+      - oracle_data:/opt/oracle/oradata
+      - ./init:/container-entrypoint-initdb.d:ro
+    mem_limit: 2g
+    memswap_limit: 3g
+    shm_size: 1g
+    healthcheck:
+      test: ["CMD", "healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+      start_period: 60s
+secrets:
+  admin_password:
+    file: ./secrets/admin_password
+  app_password:
+    file: ./secrets/app_password
+volumes:
+  oracle_data:

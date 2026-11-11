@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.env
+node_modules/
+ui/react-app/build/
+
+oracle/secrets/
+.env.oracle
+

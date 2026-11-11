@@ -1,0 +1,6 @@
+Loading overview DOM
+Waiting for overview data
+[OK] Overview values/table, sales filter, custom select, drill-through and shell events
+Loading report DOM
+[OK] Report navigation, parameters, report 2 (5 rows), report 9 (50 rows)
+UI DOM integration passed (charts stubbed; no geometry assertions)

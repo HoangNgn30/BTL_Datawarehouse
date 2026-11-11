@@ -1,0 +1,114 @@
+{
+  "VanPhongDaiDien": {
+    "columns": [
+      "MaThanhPho",
+      "TenThanhPho",
+      "DiaChiVP",
+      "Bang",
+      "ThoiGian"
+    ],
+    "customer": false
+  },
+  "CuaHang": {
+    "columns": [
+      "MaCuaHang",
+      "MaThanhPho",
+      "SoDienThoai",
+      "ThoiGian"
+    ],
+    "customer": false
+  },
+  "MatHang": {
+    "columns": [
+      "MaMH",
+      "MoTa",
+      "KichCo",
+      "TrongLuong",
+      "Gia",
+      "ThoiGian"
+    ],
+    "customer": false
+  },
+  "KhachHang": {
+    "columns": [
+      "MaKH",
+      "TenKH",
+      "MaThanhPho",
+      "NgayDatHangDauTien"
+    ],
+    "customer": true
+  },
+  "KhachHangDuLich": {
+    "columns": [
+      "MaKH",
+      "HuongDanVienDuLich",
+      "ThoiGian"
+    ],
+    "customer": true
+  },
+  "KhachHangBuuDien": {
+    "columns": [
+      "MaKH",
+      "DiaChiBuuDien",
+      "ThoiGian"
+    ],
+    "customer": true
+  },
+  "MatHangLuuTru": {
+    "columns": [
+      "MaCuaHang",
+      "MaMH",
+      "SoLuongTrongKho",
+      "ThoiGian"
+    ],
+    "customer": false
+  },
+  "DonDatHang": {
+    "columns": [
+      "MaDon",
+      "NgayDatHang",
+      "MaKH"
+    ],
+    "customer": false
+  },
+  "MatHangDuocDat": {
+    "columns": [
+      "MaDon",
+      "MaMH",
+      "SoLuongDat",
+      "GiaDat",
+      "ThoiGian"
+    ],
+    "customer": false
+  },
+  "PhanBoDonHang": {
+    "columns": [
+      "MaDon",
+      "MaMH",
+      "MaCuaHang",
+      "SoLuongCap"
+    ],
+    "customer": false
+  },
+  "BienDongKho": {
+    "columns": [
+      "MaBienDong",
+      "MaCuaHang",
+      "MaMH",
+      "Ngay",
+      "Loai",
+      "SoLuong",
+      "MaDon"
+    ],
+    "customer": false
+  },
+  "TonKhoThang": {
+    "columns": [
+      "ThangKey",
+      "MaCuaHang",
+      "MaMH",
+      "SoLuong"
+    ],
+    "customer": false
+  }
+}

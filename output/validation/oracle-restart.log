@@ -1,0 +1,5 @@
+[OK] Oracle 23.26.3.0.0 -> staging KhachHang: 300 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangDuLich: 200 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangBuuDien: 150 rows
+[OK] Oracle -> galaxy Dim_KhachHang: 300 rows, all attributes
+Oracle verification passed

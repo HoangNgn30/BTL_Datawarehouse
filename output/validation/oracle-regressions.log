@@ -1,0 +1,19 @@
+Oracle -> STG_OracleVPDD.KhachHang: 300 rows; SHA256=9ca24c0adf4b389491a472bb3160f8c794eb5de11f44760b5e32d00569f50095
+Oracle -> STG_OracleVPDD.KhachHangDuLich: 200 rows; SHA256=7de1d3f06ae594a8dfcd523e84c77c11a578d1bfcb9212989842af4a1836ccc5
+Oracle -> STG_OracleVPDD.KhachHangBuuDien: 150 rows; SHA256=7b05f11d40c51e8e02c63d133b77cfeb1511db677d147119930f1a115466ab35
+[OK] Oracle 23.26.3.0.0 -> staging KhachHang: 300 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangDuLich: 200 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangBuuDien: 150 rows
+[OK] Oracle -> galaxy Dim_KhachHang: 300 rows, all attributes
+Oracle verification passed
+[OK] Oracle change propagates to DW; Unicode preserved
+[OK] Cross-source orphan rejected; staging transaction rolled back
+Oracle -> STG_OracleVPDD.KhachHang: 300 rows; SHA256=0c0b5f9e6eef9bd87fef9d7fc559bc6aa557cbbab97290dc519582a9ba78345f
+Oracle -> STG_OracleVPDD.KhachHangDuLich: 200 rows; SHA256=7de1d3f06ae594a8dfcd523e84c77c11a578d1bfcb9212989842af4a1836ccc5
+Oracle -> STG_OracleVPDD.KhachHangBuuDien: 150 rows; SHA256=7b05f11d40c51e8e02c63d133b77cfeb1511db677d147119930f1a115466ab35
+[OK] Oracle 23.26.3.0.0 -> staging KhachHang: 300 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangDuLich: 200 rows
+[OK] Oracle 23.26.3.0.0 -> staging KhachHangBuuDien: 150 rows
+[OK] Oracle -> galaxy Dim_KhachHang: 300 rows, all attributes
+Oracle verification passed
+2/2 Oracle integration regressions passed; source restored
