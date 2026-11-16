@@ -12,7 +12,7 @@ GO
 -- ============================================================
 -- PHẦN 1: SALES CUBE (24 bảng — olap_ds_*)
 -- Measures: tong_so_luong = SUM(so_luong), tong_doanh_thu = SUM(tong_tien)
--- Chiều: Time(4) × MatHang(2) × KhachHang(3) = 24
+-- Chiều: Time(4) × MatHang(2) × KhachHang(3) = 24 = 1 (0-D) + 6 (1-D) + 11 (2-D) + 6 (3-D)
 -- ============================================================
 
 -- ------------------------------------------------------------
@@ -99,7 +99,7 @@ JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
 GROUP BY kh.kh_key, kh.ten, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
 -- ------------------------------------------------------------
--- 2-D (12 bảng)
+-- 2-D (11 bảng)
 -- ------------------------------------------------------------
 
 -- [8] olap_ds_nam_mh
@@ -256,21 +256,11 @@ JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key = mh.mh_key
 JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key = kh.kh_key
 GROUP BY mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
--- [19] olap_ds_quy_mh_kh
-SELECT t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh,
-       SUM(f.so_luong) AS tong_so_luong, SUM(f.tong_tien) AS tong_doanh_thu
-INTO OLAP_QuanLyBanHang.dbo.olap_ds_quy_mh_kh
-FROM DW_Core.dbo.Fact_BanHang f
-JOIN DW_Core.dbo.Dim_ThoiGian t ON t.time_key = f.time_key
-JOIN DW_Core.dbo.Dim_MatHang mh ON mh.mh_key = f.mh_key
-JOIN DW_Core.dbo.Dim_KhachHang kh ON kh.kh_key = f.kh_key
-GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
-
 -- ------------------------------------------------------------
--- 3-D (5 bảng)
+-- 3-D (6 bảng)
 -- ------------------------------------------------------------
 
--- [20] olap_ds_nam_mh_loai_kh
+-- [19] olap_ds_nam_mh_loai_kh
 SELECT
     t.nam,
     mh.mh_key,
@@ -285,7 +275,7 @@ JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key   = mh.mh_key
 JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key   = kh.kh_key
 GROUP BY t.nam, mh.mh_key, mh.mo_ta, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
--- [21] olap_ds_quy_mh_loai_kh
+-- [20] olap_ds_quy_mh_loai_kh
 SELECT
     t.nam,
     t.quy,
@@ -301,7 +291,7 @@ JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key   = mh.mh_key
 JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key   = kh.kh_key
 GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
--- [22] olap_ds_thang_mh_loai_kh
+-- [21] olap_ds_thang_mh_loai_kh
 SELECT
     t.nam,
     t.quy,
@@ -318,7 +308,7 @@ JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key   = mh.mh_key
 JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key   = kh.kh_key
 GROUP BY t.nam, t.quy, t.thang, mh.mh_key, mh.mo_ta, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
--- [23] olap_ds_nam_mh_kh
+-- [22] olap_ds_nam_mh_kh
 SELECT
     t.nam,
     mh.mh_key,
@@ -334,6 +324,16 @@ JOIN DW_Core.dbo.Dim_ThoiGian  t  ON f.time_key = t.time_key
 JOIN DW_Core.dbo.Dim_MatHang   mh ON f.mh_key   = mh.mh_key
 JOIN DW_Core.dbo.Dim_KhachHang kh ON f.kh_key   = kh.kh_key
 GROUP BY t.nam, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
+
+-- [23] olap_ds_quy_mh_kh
+SELECT t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh,
+       SUM(f.so_luong) AS tong_so_luong, SUM(f.tong_tien) AS tong_doanh_thu
+INTO OLAP_QuanLyBanHang.dbo.olap_ds_quy_mh_kh
+FROM DW_Core.dbo.Fact_BanHang f
+JOIN DW_Core.dbo.Dim_ThoiGian t ON t.time_key = f.time_key
+JOIN DW_Core.dbo.Dim_MatHang mh ON mh.mh_key = f.mh_key
+JOIN DW_Core.dbo.Dim_KhachHang kh ON kh.kh_key = f.kh_key
+GROUP BY t.nam, t.quy, mh.mh_key, mh.mo_ta, kh.kh_key, kh.ten, kh.loai_kh OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
 -- [24] olap_ds_thang_mh_kh
 SELECT

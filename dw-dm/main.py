@@ -4,6 +4,7 @@ Chạy: uvicorn main:app --reload --port 8000
 """
 import os
 from contextlib import contextmanager
+from datetime import date
 from pathlib import Path
 from cube_queries import sales_query, inventory_query, DIM_COLS_DS, DIM_COLS_TK
 from typing import Optional
@@ -215,11 +216,17 @@ def olap_slice(cube: str, chieu: str, gia_tri: str):
             return get_doanh_so(nhom="nam", loc_loai_kh=gia_tri)
         if chieu == "mh":
             return get_doanh_so(nhom="nam", loc_mh=gia_tri)
+        if chieu == "bang":
+            raise HTTPException(400, "Sales cube không có chiều địa lý (bang); hãy slice bang trên cube tồn kho")
     if cube == "tk":
         if chieu == "nam":
             return get_ton_kho(nhom="tinh", loc_nam=int(gia_tri))
         if chieu == "bang":
             return get_ton_kho(nhom="nam", loc_bang=gia_tri)
+        if chieu == "mh":
+            return get_ton_kho(nhom="nam", loc_mh=gia_tri)
+        if chieu == "loai_kh":
+            raise HTTPException(400, "Cube tồn kho không có chiều loại khách hàng")
     raise HTTPException(400, "Tham số slice không hợp lệ")
 
 
@@ -342,7 +349,17 @@ def olap_drill_through(
 # =====================================================================
 # 9 báo cáo OLAP theo đề bài (truy vấn galaxy schema DW_Core)
 # =====================================================================
-LATEST_KHO = "k.time_key = (SELECT MAX(k2.time_key) FROM Fact_Kho k2 WHERE k2.ch_key = k.ch_key AND k2.mh_key = k.mh_key)"
+def latest_kho(den_thang: Optional[int]) -> tuple[str, list]:
+    """Snapshot tồn kho mới nhất của mỗi (cửa hàng, mặt hàng), tính đến tháng den_thang (YYYYMM) nếu có.
+
+    Tồn kho là semi-additive nên báo cáo theo thời gian lấy số dư cuối kỳ, không cộng các tháng.
+    """
+    if den_thang is None:
+        return "k.time_key = (SELECT MAX(k2.time_key) FROM Fact_Kho k2 WHERE k2.ch_key = k.ch_key AND k2.mh_key = k.mh_key)", []
+    if not (190001 <= den_thang <= 999912 and 1 <= den_thang % 100 <= 12):
+        raise HTTPException(400, "den_thang phải có dạng YYYYMM, ví dụ 202206")
+    return ("k.time_key = (SELECT MAX(k2.time_key) FROM Fact_Kho k2 WHERE k2.ch_key = k.ch_key "
+            "AND k2.mh_key = k.mh_key AND k2.time_key <= ?)"), [den_thang]
 
 
 @app.get("/api/bao-cao/1")
@@ -358,13 +375,20 @@ def bc1(ch: Optional[str] = None):
 
 
 @app.get("/api/bao-cao/2")
-def bc2(kh: str):
-    """YC2: các đơn đặt hàng với tên KH và ngày đặt của khách đó."""
-    return query_all(DB_DW, """
+def bc2(kh: str, tu_ngay: Optional[date] = None, den_ngay: Optional[date] = None):
+    """YC2: các đơn đặt hàng với tên KH và ngày đặt của khách đó (có thể giới hạn khoảng ngày)."""
+    if tu_ngay and den_ngay and tu_ngay > den_ngay:
+        raise HTTPException(400, "tu_ngay phải trước hoặc bằng den_ngay")
+    clauses, params = ["f.kh_key = ?"], [kh]
+    if tu_ngay:
+        clauses.append("n.ngay >= ?"); params.append(tu_ngay)
+    if den_ngay:
+        clauses.append("n.ngay <= ?"); params.append(den_ngay)
+    return query_all(DB_DW, f"""
         SELECT * FROM (SELECT DISTINCT f.ma_don, kh.kh_key, kh.ten, n.ngay
         FROM Fact_BanHang f JOIN Dim_KhachHang kh ON kh.kh_key = f.kh_key
         JOIN Dim_Ngay n ON n.ngay_key = f.ngay_key
-        WHERE f.kh_key = ?) ordered_data ORDER BY ngay, TRY_CONVERT(BIGINT,ma_don), ma_don""", [kh])
+        WHERE {' AND '.join(clauses)}) ordered_data ORDER BY ngay, TRY_CONVERT(BIGINT,ma_don), ma_don""", params)
 
 
 @app.get("/api/bao-cao/3")
@@ -379,27 +403,38 @@ def bc3(kh: str):
 
 
 @app.get("/api/bao-cao/4")
-def bc4(mh: str, muc: int = 100):
-    """YC4: địa chỉ VPĐD, TP, bang của các cửa hàng lưu kho một mặt hàng với số lượng > mức."""
+def bc4(mh: str, muc: int = 100, den_thang: Optional[int] = None):
+    """YC4: địa chỉ VPĐD, TP, bang của các cửa hàng lưu kho một mặt hàng với số lượng > mức (tại tháng den_thang)."""
+    snapshot, snapshot_params = latest_kho(den_thang)
     return query_all(DB_DW, f"""
         SELECT DISTINCT ch.ch_key, v.dia_chi_vp, v.ten_tp, v.bang, k.so_luong
         FROM Fact_Kho k JOIN Dim_CuaHang ch ON ch.ch_key = k.ch_key JOIN Dim_VPDD v ON v.vp_key = ch.vp_key
-        WHERE k.mh_key = ? AND k.so_luong > ? AND {LATEST_KHO}
-        ORDER BY k.so_luong DESC""", [mh, muc])
+        WHERE k.mh_key = ? AND k.so_luong > ? AND {snapshot}
+        ORDER BY k.so_luong DESC""", [mh, muc] + snapshot_params)
 
 
 @app.get("/api/bao-cao/5")
 def bc5(ma_don: str):
-    """YC5: với mỗi đơn, mặt hàng đặt + mô tả, cửa hàng đáp ứng, TP và các cửa hàng có bán mặt hàng đó."""
+    """YC5: với mỗi đơn, mặt hàng đặt + mô tả, cửa hàng đáp ứng, TP và các cửa hàng có bán mặt hàng đó.
+
+    Mỗi dòng = một (dòng đơn, cửa hàng cấp hàng). Danh sách cửa hàng có bán được gộp vào một cột
+    để không nhân bản số lượng cấp theo số cửa hàng có bán.
+    """
     return query_all(DB_DW, """
-        SELECT f.ma_don, f.mh_key, mh.mo_ta, pb.ch_key AS ch_dap_ung, pb.so_luong_cap, v.ten_tp AS tp_dap_ung,
-               k.ch_key AS ch_co_ban, v2.ten_tp AS tp_ch_co_ban
+        SELECT f.ma_don, f.mh_key, mh.mo_ta, f.so_luong, pb.ch_key AS ch_dap_ung, pb.so_luong_cap,
+               v.ten_tp AS tp_dap_ung, cb.cac_ch_co_ban
         FROM Fact_BanHang f JOIN Dim_MatHang mh ON mh.mh_key = f.mh_key
         LEFT JOIN Fact_PhanBo pb ON pb.ma_don = f.ma_don AND pb.mh_key = f.mh_key
         LEFT JOIN Dim_CuaHang c ON c.ch_key = pb.ch_key LEFT JOIN Dim_VPDD v ON v.vp_key = c.vp_key
-        LEFT JOIN (SELECT DISTINCT ch_key, mh_key FROM Fact_Kho) k ON k.mh_key = f.mh_key
-        LEFT JOIN Dim_CuaHang c2 ON c2.ch_key = k.ch_key LEFT JOIN Dim_VPDD v2 ON v2.vp_key = c2.vp_key
-        WHERE f.ma_don = ? ORDER BY TRY_CONVERT(BIGINT,f.mh_key), f.mh_key, TRY_CONVERT(BIGINT,k.ch_key), k.ch_key""", [ma_don])
+        OUTER APPLY (
+            SELECT STRING_AGG(CONCAT(s.ch_key, N' (', s.ten_tp, N')'), N', ')
+                   WITHIN GROUP (ORDER BY TRY_CONVERT(BIGINT, s.ch_key), s.ch_key) AS cac_ch_co_ban
+            FROM (SELECT DISTINCT k.ch_key, v2.ten_tp
+                  FROM Fact_Kho k JOIN Dim_CuaHang c2 ON c2.ch_key = k.ch_key
+                  JOIN Dim_VPDD v2 ON v2.vp_key = c2.vp_key
+                  WHERE k.mh_key = f.mh_key) s
+        ) cb
+        WHERE f.ma_don = ? ORDER BY TRY_CONVERT(BIGINT,f.mh_key), f.mh_key, TRY_CONVERT(BIGINT,pb.ch_key), pb.ch_key""", [ma_don])
 
 
 @app.get("/api/bao-cao/6")
@@ -411,13 +446,14 @@ def bc6(kh: str):
 
 
 @app.get("/api/bao-cao/7")
-def bc7(mh: str, tp: str):
-    """YC7: mức tồn kho một mặt hàng tại tất cả cửa hàng của một thành phố (snapshot mới nhất)."""
+def bc7(mh: str, tp: str, den_thang: Optional[int] = None):
+    """YC7: mức tồn kho một mặt hàng tại tất cả cửa hàng của một thành phố (snapshot mới nhất hoặc tại tháng den_thang)."""
+    snapshot, snapshot_params = latest_kho(den_thang)
     return query_all(DB_DW, f"""
         SELECT ch.ch_key, v.ten_tp, k.mh_key, k.so_luong AS ton_kho
         FROM Fact_Kho k JOIN Dim_CuaHang ch ON ch.ch_key = k.ch_key JOIN Dim_VPDD v ON v.vp_key = ch.vp_key
-        WHERE k.mh_key = ? AND ch.vp_key = ? AND {LATEST_KHO}
-        ORDER BY TRY_CONVERT(BIGINT,ch.ch_key), ch.ch_key""", [mh, tp])
+        WHERE k.mh_key = ? AND ch.vp_key = ? AND {snapshot}
+        ORDER BY TRY_CONVERT(BIGINT,ch.ch_key), ch.ch_key""", [mh, tp] + snapshot_params)
 
 
 @app.get("/api/bao-cao/8")

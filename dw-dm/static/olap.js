@@ -3,6 +3,8 @@
 const API = "";
 const fmtNum = n => (n == null ? "—" : Number(n).toLocaleString("vi-VN"));
 const fmtMoney = n => (n == null ? "—" : Number(n).toLocaleString("vi-VN") + " ₫");
+// Every database value placed into innerHTML must go through escapeHTML.
+const escapeHTML = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 async function api(path) {
   const res = await fetch(API + path);
@@ -125,14 +127,14 @@ async function loadDashboard() {
 function buildTable(tableEl, rows, columns) {
   const thead = tableEl.querySelector("thead");
   const tbody = tableEl.querySelector("tbody");
-  thead.innerHTML = "<tr>" + columns.map(c => `<th scope="col"${c.fmt ? ' class="numeric"' : ''}>${c.label}</th>`).join("") + "</tr>";
+  thead.innerHTML = "<tr>" + columns.map(c => `<th scope="col"${c.fmt ? ' class="numeric"' : ''}>${escapeHTML(c.label)}</th>`).join("") + "</tr>";
   if (!rows.length) {
     tbody.innerHTML = `<tr><td colspan="${columns.length}" class="empty">Không có dữ liệu</td></tr>`;
     return;
   }
   tbody.innerHTML = rows.map(r =>
-    "<tr data-row='" + JSON.stringify(r).replace(/'/g, "&apos;") + "'>" +
-    columns.map(c => `<td data-label="${c.label}"${c.fmt ? ' class="numeric"' : ''}>${c.fmt ? c.fmt(r[c.key]) : (r[c.key] ?? "")}</td>`).join("") +
+    `<tr data-row="${escapeHTML(JSON.stringify(r))}">` +
+    columns.map(c => `<td data-label="${escapeHTML(c.label)}"${c.fmt ? ' class="numeric"' : ''}>${escapeHTML(c.fmt ? c.fmt(r[c.key]) : r[c.key])}</td>`).join("") +
     "</tr>"
   ).join("");
 }
@@ -290,7 +292,7 @@ async function runDoanhSo() {
   el("tb-ds").querySelectorAll("tbody tr").forEach(tr => {
     tr.addEventListener("click", () => {
       if (!tr.dataset.row) return;
-      const r = JSON.parse(tr.dataset.row.replace(/&apos;/g, "'"));
+      const r = JSON.parse(tr.dataset.row);
       const p = new URLSearchParams();
       if (r.kh_key) p.set("kh_key", r.kh_key);
       if (r.mh_key) p.set("mh_key", r.mh_key);
@@ -370,11 +372,11 @@ el("tk-reset").addEventListener("click", () => {
 function tableFromArray(rows) {
   if (!rows || !rows.length) return "<div class='empty'>Không có dữ liệu</div>";
   const keys = Object.keys(rows[0]);
-  return "<table><thead><tr>" + keys.map(k => `<th>${k}</th>`).join("") +
+  return "<table><thead><tr>" + keys.map(k => `<th>${escapeHTML(k)}</th>`).join("") +
     "</tr></thead><tbody>" + rows.map(r =>
       "<tr>" + keys.map(k => {
         const v = r[k];
-        return `<td>${typeof v === "number" ? fmtNum(v) : (v ?? "")}</td>`;
+        return `<td>${escapeHTML(typeof v === "number" ? fmtNum(v) : v)}</td>`;
       }).join("") + "</tr>"
     ).join("") + "</tbody></table>";
 }
@@ -383,7 +385,7 @@ function tableFromArray(rows) {
 function syncOlapControls() {
   const sliceCube = document.querySelector('[data-sl="cube"]');
   const sliceAxis = document.querySelector('[data-sl="chieu"]');
-  const allowed = sliceCube.value === 'ds' ? ['nam','loai_kh','mh'] : ['nam','bang'];
+  const allowed = sliceCube.value === 'ds' ? ['nam','loai_kh','mh'] : ['nam','bang','mh'];
   for (const option of sliceAxis.options) {
     option.hidden = option.disabled = !allowed.includes(option.value);
   }
@@ -410,7 +412,7 @@ async function runRollup() {
   const cube = document.querySelector('[data-rl="cube"]').value;
   const lvl = document.querySelector('[data-rl="len"]').value;
   const res = await api(`/api/olap/roll-up?cube=${cube}&tu=thang&len=${lvl}`);
-  el("r-rollup").innerHTML = `<span class="cuboid-tag">${res.cuboid}</span>` + tableFromArray(res.data);
+  el("r-rollup").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
 
 async function runDrilldown() {
@@ -420,7 +422,7 @@ async function runDrilldown() {
   let url = `/api/olap/drill-down?cube=${cube}&xuong=${xuong}`;
   if (nam) url += `&loc_nam=${nam}`;
   const res = await api(url);
-  el("r-drilldown").innerHTML = `<span class="cuboid-tag">${res.cuboid}</span>` + tableFromArray(res.data);
+  el("r-drilldown").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
 
 async function runSlice() {
@@ -429,7 +431,7 @@ async function runSlice() {
   const giaTri = document.querySelector('[data-sl="gia_tri"]').value;
   if (!giaTri) return alert("Nhập giá trị slice");
   const res = await api(`/api/olap/slice?cube=${cube}&chieu=${chieu}&gia_tri=${encodeURIComponent(giaTri)}`);
-  el("r-slice").innerHTML = `<span class="cuboid-tag">${res.cuboid}</span>` + tableFromArray(res.data);
+  el("r-slice").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
 
 async function runDice() {
@@ -441,7 +443,7 @@ async function runDice() {
   if (nam) url += `&loc_nam=${nam}`;
   if (cube === "ds" && lk) url += `&loc_loai_kh=${encodeURIComponent(lk)}`;
   const res = await api(url);
-  el("r-dice").innerHTML = `<span class="cuboid-tag">${res.cuboid}</span>` + tableFromArray(res.data);
+  el("r-dice").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
 
 async function runPivot() {
@@ -450,10 +452,10 @@ async function runPivot() {
   if (hang === cot) return alert("Hàng và cột phải khác nhau");
   const res = await api(`/api/olap/pivot?cube=ds&hang=${hang}&cot=${cot}`);
   let html = "<table><thead><tr><th>" + ({nam:"Năm",loai_kh:"Loại khách hàng",mh:"Mặt hàng"}[hang]) + " / " + ({nam:"Năm",loai_kh:"Loại khách hàng",mh:"Mặt hàng"}[cot]) + "</th>";
-  res.labels_cot.forEach(c => html += `<th>${c}</th>`);
+  res.labels_cot.forEach(c => html += `<th>${escapeHTML(c)}</th>`);
   html += "</tr></thead><tbody>";
   res.labels_hang.forEach((h, i) => {
-    html += `<tr><th>${h}</th>` + res.matrix[i].map(v => `<td>${fmtNum(v)}</td>`).join("") + "</tr>";
+    html += `<tr><th>${escapeHTML(h)}</th>` + res.matrix[i].map(v => `<td>${fmtNum(v)}</td>`).join("") + "</tr>";
   });
   html += "</tbody></table>";
   el("r-pivot").innerHTML = html;
@@ -486,7 +488,7 @@ async function openDrillThrough(params) {
     const r = el("r-drillthrough");
     if (r) r.innerHTML = tableFromArray(data.slice(0, 50));
   } catch (e) {
-    el("modal-body").innerHTML = `<div class="empty">Lỗi: ${e.message}</div>`;
+    el("modal-body").innerHTML = `<div class="empty">Lỗi: ${escapeHTML(e.message)}</div>`;
   }
 }
 function closeModal() { el("modal").classList.remove("show"); }

@@ -90,9 +90,17 @@ FROM IDB_TichHop.dbo.KhachHang k
 LEFT JOIN IDB_TichHop.dbo.KhachHangDuLich  dl ON dl.MaKH = k.MaKH
 LEFT JOIN IDB_TichHop.dbo.KhachHangBuuDien bd ON bd.MaKH = k.MaKH OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
 
--- Dim_ThoiGian: moi thang tu thang dau tien co don hang den thang cuoi
-DECLARE @d0 DATE = (SELECT DATEFROMPARTS(MIN(ThangKey)/100, MIN(ThangKey)%100, 1) FROM IDB_TichHop.dbo.TonKhoThang);
-DECLARE @d1 DATE = (SELECT DATEFROMPARTS(MAX(ThangKey)/100, MAX(ThangKey)%100, 1) FROM IDB_TichHop.dbo.TonKhoThang);
+-- Dim_ThoiGian: moi thang lien tuc, phu HOP cua thang dat hang (Fact_BanHang) va thang snapshot (Fact_Kho).
+-- Ca hai fact deu co FK toi Dim_ThoiGian nen khong duoc chi lay khoang cua mot nguon.
+DECLARE @k0 BIGINT, @k1 BIGINT;
+SELECT @k0 = MIN(k), @k1 = MAX(k) FROM (
+    SELECT ThangKey AS k FROM IDB_TichHop.dbo.TonKhoThang
+    UNION ALL
+    SELECT YEAR(NgayDatHang)*100 + MONTH(NgayDatHang) FROM IDB_TichHop.dbo.DonDatHang
+) months OPTION (MAXDOP 1, MAX_GRANT_PERCENT = 0);
+IF @k0 IS NULL THROW 51020, 'Khong co don hang hay snapshot ton kho de sinh Dim_ThoiGian', 1;
+DECLARE @d0 DATE = DATEFROMPARTS(@k0/100, @k0%100, 1);
+DECLARE @d1 DATE = DATEFROMPARTS(@k1/100, @k1%100, 1);
 ;WITH m AS (SELECT @d0 AS d UNION ALL SELECT DATEADD(MONTH,1,d) FROM m WHERE d < @d1)
 INSERT dbo.Dim_ThoiGian
 SELECT YEAR(d)*100+MONTH(d), MONTH(d), DATEPART(QUARTER,d), YEAR(d) FROM m OPTION (MAXRECURSION 1000, MAXDOP 1, MAX_GRANT_PERCENT = 0);

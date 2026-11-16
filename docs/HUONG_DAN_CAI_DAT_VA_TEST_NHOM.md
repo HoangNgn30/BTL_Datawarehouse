@@ -180,7 +180,7 @@ Oracle + nguồn bán hàng SQL Server
 
 Pipeline tạo IDB tích hợp, 3 fact trong DW, 56 cuboid, metadata và index; sau đó đối chiếu dữ liệu và kiểm tra API. Các kiểm tra API trong pipeline tự chạy bằng TestClient, chưa cần khởi động Web riêng.
 
-Chỉ chuyển sang bước mở Web khi pipeline kết thúc thành công. Mốc kiểm tra của bản đã thử nghiệm là `62/62` OLAP, `9/9` truy vấn nghiệp vụ, `89` API/UI và `28/28` IDB/metadata/index. Nếu phiên bản mới bổ sung test, số lượng có thể thay đổi; điều kiện là không có test thất bại hoặc traceback.
+Chỉ chuyển sang bước mở Web khi pipeline kết thúc thành công. Mốc kiểm tra của bản đã thử nghiệm là `62/62` OLAP, `12/12` đối chiếu truy vấn nghiệp vụ (9 báo cáo + 3 ca tham số thời gian), `89` API/UI và `28/28` IDB/metadata/index. Nếu phiên bản mới bổ sung test, số lượng có thể thay đổi; điều kiện là không có test thất bại hoặc traceback.
 
 **Không chạy cả `run_all.ps1` rồi làm lại mục 5.** Mục 5–6 đã là một quy trình hoàn chỉnh. `run_all.ps1` là lối dựng demo SQL-only khác; không cần dùng khi làm theo luồng Oracle ở tài liệu này.
 

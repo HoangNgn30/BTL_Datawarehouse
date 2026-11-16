@@ -11,7 +11,7 @@ Nguồn: 12 thành phố, 30 cửa hàng, 60 mặt hàng, 300 khách, 1.500 đơ
 | Kiểm tra | Kết quả | Bằng chứng |
 |---|---|---|
 | Nguồn → phân bổ/ledger → ETL → vật hóa cuboid → đối chiếu | 62/62 đạt; đủ 56 bảng | output/validation/pipeline.log |
-| Đối chiếu từng hàng 9 báo cáo với truy vấn nguồn | 9/9 đạt tại bộ tham số lưu trong script | output/validation/reports.log |
+| Đối chiếu từng hàng 9 báo cáo (thêm ca tham số thời gian cho YC2, YC4, YC7) với truy vấn nguồn | 12/12 ca phải đạt (chưa chạy lại sau khi sửa) | output/validation/reports.log |
 | Tất cả tổ hợp trục, bộ lọc, pivot đảo chiều, drill-through, API báo cáo, tồn cuối quý | 87 kiểm tra đạt | output/validation/api.log |
 | Chặn khởi tạo đè nguồn khi thiếu -ResetDemo | Dừng với SQL error 51000, trước bước xóa nguồn | output/validation/reset_guard.log |
 | SQL mẫu cho 9 yêu cầu chạy trực tiếp | sqlcmd exit 0 | output/validation/report_sql.log |
