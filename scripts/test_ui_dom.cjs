@@ -25,7 +25,7 @@ try{
  a.d.dispatchEvent(new a.w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert(!a.d.querySelector('.sidebar').classList.contains('opened'));
  const change=(selector,value)=>{const control=a.d.querySelector(selector);control.value=value;control.dispatchEvent(new a.w.Event('change',{bubbles:true}));};
  change('[data-sl="cube"]','tk');
- assert.deepEqual([...a.d.querySelector('[data-sl="chieu"]').options].filter(o=>!o.disabled).map(o=>o.value),['nam','bang']);
+ assert.deepEqual([...a.d.querySelector('[data-sl="chieu"]').options].filter(o=>!o.disabled).map(o=>o.value),['nam','mh','bang']);
  change('[data-sl="cube"]','ds');
  assert(a.d.querySelector('[data-sl="chieu"] option[value="bang"]').disabled);
  change('[data-pv="hang"]','mh');

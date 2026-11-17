@@ -20,4 +20,4 @@ Bộ lọc chung: `loc_nam`, `loc_quy`, `loc_thang`, `loc_mh`. Sales thêm `loc_
 
 Tồn kho là semi-additive: không SUM các snapshot tháng. Khi có bộ lọc, giữ cửa hàng/mặt hàng tới bước chọn snapshot cuối trong từng kỳ, rồi mới nhóm theo các trục hiển thị. API có thể báo cuboid nguồn chi tiết thay vì tên nhóm kết quả; `dim_cols` mô tả đúng cột hiển thị.
 
-Mã sinh 56 bảng: `dw-dm/create_56_cuboids_vi.sql`. Kiểm tra độc lập tất cả bảng: `scripts/validate_olap.py`. Giao diện và cả ba entry point legacy đều sử dụng `dw-dm/main.py`.
+Mã sinh 56 bảng: `dw-dm/create_56_cuboids_vi.sql`. Kiểm tra độc lập tất cả bảng: `scripts/validate_olap.py`. Giao diện sử dụng API tại `dw-dm/main.py`.

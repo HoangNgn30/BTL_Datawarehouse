@@ -1,8 +1,8 @@
 
 // ============== Helpers ==============
 const API = "";
-const fmtNum = n => (n == null ? "—" : Number(n).toLocaleString("vi-VN"));
-const fmtMoney = n => (n == null ? "—" : Number(n).toLocaleString("vi-VN") + " ₫");
+const fmtNum = window.formatNumber;
+const fmtMoney = window.formatMoney;
 // Every database value placed into innerHTML must go through escapeHTML.
 const escapeHTML = v => String(v ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -48,7 +48,14 @@ function chart(id, type, labels, datasets, opts = {}) {
       responsive: true, maintainAspectRatio: false,
       animation: window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches ? false : { duration: 200 },
       font: { family: chartFont, size: 13 },
-      plugins: { legend: { position: "bottom", labels: { color: chartText, boxWidth: 12, padding: 16, font: { size: 13, family: chartFont } } } },
+      plugins: {
+        legend: { position: "bottom", labels: { color: chartText, boxWidth: 12, padding: 16, font: { size: 13, family: chartFont } } },
+        tooltip: { callbacks: { label: context => {
+          const label = context.dataset.label || context.label || '';
+          const money = /doanh thu|doanh số|₫/i.test(context.dataset.label || '') || id === 'ch-loaikh';
+          return label + ': ' + (money ? fmtMoney(context.raw) : fmtNum(context.raw));
+        } } },
+      },
       scales: type === "pie" || type === "doughnut" ? {} : {
         y: { beginAtZero: true, ticks: { color: chartText, font: { size: 13, family: chartFont } }, grid: { color: theme.getPropertyValue('--border').trim() } },
         x: { ticks: { color: chartText, font: { size: 13, family: chartFont } }, grid: { display: false } },
@@ -251,7 +258,9 @@ document.querySelectorAll(".seg").forEach(seg => {
 });
 
 // ============== Sales Cube ==============
+let salesRequestId = 0;
 async function runDoanhSo() {
+  const ticket = ++salesRequestId;
   const s = axisState.ds;
   const params = new URLSearchParams({
     time_axis: s.time, mh_axis: s.mh, kh_axis: s.kh,
@@ -266,9 +275,11 @@ async function runDoanhSo() {
   try {
     res = await api("/api/doanh-so/v2?" + params);
   } catch (e) {
+    if (ticket !== salesRequestId) return;
     alert("Cuboid không tồn tại với tổ hợp này.\n" + e.message);
     return;
   }
+  if (ticket !== salesRequestId) return;
   el("ds-cuboid").textContent = res.cuboid;
   el("ds-lattice").textContent = res.lattice + "D";
   el("ds-hint").textContent = HINTS[res.lattice];
@@ -320,7 +331,9 @@ el("ds-reset").addEventListener("click", () => {
 });
 
 // ============== Inventory Cube ==============
+let inventoryRequestId = 0;
 async function runTonKho() {
+  const ticket = ++inventoryRequestId;
   const s = axisState.tk;
   const params = new URLSearchParams({
     time_axis: s.time, mh_axis: s.mh, loc_axis: s.loc,
@@ -335,9 +348,11 @@ async function runTonKho() {
   try {
     res = await api("/api/ton-kho/v2?" + params);
   } catch (e) {
+    if (ticket !== inventoryRequestId) return;
     alert("Cuboid không tồn tại với tổ hợp này.\n" + e.message);
     return;
   }
+  if (ticket !== inventoryRequestId) return;
   el("tk-cuboid").textContent = res.cuboid;
   el("tk-lattice").textContent = res.lattice + "D";
   el("tk-hint").textContent = HINTS[res.lattice];
@@ -376,7 +391,8 @@ function tableFromArray(rows) {
     "</tr></thead><tbody>" + rows.map(r =>
       "<tr>" + keys.map(k => {
         const v = r[k];
-        return `<td>${escapeHTML(typeof v === "number" ? fmtNum(v) : v)}</td>`;
+        const money = ['tong_doanh_thu','tong_tien','gia','gia_dat'].includes(k);
+        return `<td>${escapeHTML(money ? fmtMoney(v) : v == null ? 'Chưa có dữ liệu' : typeof v === "number" ? fmtNum(v) : v)}</td>`;
       }).join("") + "</tr>"
     ).join("") + "</tbody></table>";
 }
@@ -455,7 +471,7 @@ async function runPivot() {
   res.labels_cot.forEach(c => html += `<th>${escapeHTML(c)}</th>`);
   html += "</tr></thead><tbody>";
   res.labels_hang.forEach((h, i) => {
-    html += `<tr><th>${escapeHTML(h)}</th>` + res.matrix[i].map(v => `<td>${fmtNum(v)}</td>`).join("") + "</tr>";
+    html += `<tr><th>${escapeHTML(h)}</th>` + res.matrix[i].map(v => `<td>${fmtMoney(v)}</td>`).join("") + "</tr>";
   });
   html += "</tbody></table>";
   el("r-pivot").innerHTML = html;

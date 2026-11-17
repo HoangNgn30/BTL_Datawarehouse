@@ -1,6 +1,6 @@
 ﻿# Chạy và kiểm tra bài tập lớn Kho dữ liệu
 
-Bản chạy chính: `dw-dm/main.py` + `dw-dm/static/`. Các entry point cũ trong `scripts/` chuyển tiếp sang cùng ứng dụng. Không copy `main_v2.py` đè lên mã khác. React hiện nhúng giao diện chính qua iframe; các component thử nghiệm cũ không thuộc luồng chạy.
+Bản chạy chính: `dw-dm/main.py` + `dw-dm/static/`. React tùy chọn nhúng giao diện chính qua iframe. Các entry point và component thử nghiệm cũ đã được loại bỏ.
 
 ## 1. Điều kiện
 

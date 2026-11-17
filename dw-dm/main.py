@@ -5,6 +5,7 @@ Chạy: uvicorn main:app --reload --port 8000
 import os
 from contextlib import contextmanager
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from cube_queries import sales_query, inventory_query, DIM_COLS_DS, DIM_COLS_TK
 from typing import Optional
@@ -50,11 +51,19 @@ def get_cursor(database: str):
         conn.close()
 
 
+def decimal_text(value: Decimal) -> str:
+    text = format(value, 'f')
+    return text.rstrip('0').rstrip('.') if '.' in text else text
+
+
 def query_all(database: str, sql: str, params: list | None = None) -> list[dict]:
     with get_cursor(database) as cur:
         cur.execute(sql, params or [])
         cols = [c[0] for c in cur.description]
-        return [dict(zip(cols, row)) for row in cur.fetchall()]
+        # JSON numbers are parsed as binary floats in the browser. Keep SQL DECIMAL
+        # as a decimal string across the API boundary, including catalogue prices.
+        return [dict(zip(cols, (decimal_text(value) if isinstance(value, Decimal) else value
+                                for value in row))) for row in cur.fetchall()]
 
 
 def query_one(database: str, sql: str, params: list | None = None) -> dict | None:
@@ -276,13 +285,16 @@ def olap_pivot(cube: str, hang: str, cot: str):
         labels_cot = sorted({str(r[cot_field]) for r in rows}, key=natural_key)
         idx_h = {v: i for i, v in enumerate(labels_hang)}
         idx_c = {v: i for i, v in enumerate(labels_cot)}
-        matrix = [[0 for _ in labels_cot] for _ in labels_hang]
+        matrix = [[Decimal(0) for _ in labels_cot] for _ in labels_hang]
         for r in rows:
             h = str(r[hang_field])
             c = str(r[cot_field])
             if h in idx_h and c in idx_c:
-                matrix[idx_h[h]][idx_c[c]] += float(r["tong_doanh_thu"] or 0)
-        return {"labels_hang": labels_hang, "labels_cot": labels_cot, "matrix": matrix}
+                value = r["tong_doanh_thu"]
+                if value is not None:
+                    matrix[idx_h[h]][idx_c[c]] += Decimal(str(value))
+        return {"labels_hang": labels_hang, "labels_cot": labels_cot,
+                "matrix": [[format(value, 'f') for value in row] for row in matrix]}
     raise HTTPException(400, "Pivot hiện chỉ hỗ trợ cube='ds'")
 
 
@@ -298,8 +310,10 @@ def olap_drill_across(nhom: str = "nam"):
     out = []
     for r in ds:
         item = {c: r[c] for c in DIM_COLS_DS[nhom]}
-        item["tong_doanh_thu"] = float(r["tong_doanh_thu"] or 0)
-        item["tong_ton_kho"] = float(tk_map.get(key(r), 0) or 0)
+        revenue = r["tong_doanh_thu"]
+        item["tong_doanh_thu"] = None if revenue is None else format(Decimal(str(revenue)), 'f')
+        # Missing period != a recorded zero balance. Chart.js keeps null as a gap.
+        item["tong_ton_kho"] = tk_map.get(key(r))
         out.append(item)
     return out
 

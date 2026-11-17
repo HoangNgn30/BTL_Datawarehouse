@@ -254,7 +254,7 @@ python scripts/validate_reports.py
 python scripts/test_api.py
 ```
 
-Các kiểm tra DB cần dữ liệu đã được nạp. `scripts/test.py` chỉ liệt kê driver, không phải bộ kiểm thử dự án. `test_oracle_pipeline.py` là kiểm thử có tạm thay đổi dữ liệu demo rồi khôi phục; không cần chạy trong đợt kiểm thử giao diện thông thường.
+Các kiểm tra DB cần dữ liệu đã được nạp. `test_oracle_pipeline.py` là kiểm thử có tạm thay đổi dữ liệu demo rồi khôi phục; không cần chạy trong đợt kiểm thử giao diện thông thường.
 
 ## 10. Cập nhật khi nhóm trưởng đẩy bản mới
 

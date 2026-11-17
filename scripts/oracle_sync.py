@@ -56,19 +56,43 @@ def read_oracle():
 def bootstrap():
     with oracle_connection() as ora:
         existing={row[0] for row in ora.cursor().execute('SELECT table_name FROM user_tables')}
-        if existing.intersection(t.upper() for t in TABLES):
-            raise RuntimeError('Oracle source tables already exist; bootstrap refuses to overwrite them.')
+        # Oracle commits DDL implicitly. A failed first install may therefore
+        # leave some empty tables. Resume only an empty, compatible schema;
+        # never delete, replace or append to an existing customer source.
+        for table,columns in TABLES.items():
+            if table.upper() in existing:
+                if ora.cursor().execute(f'SELECT COUNT(*) FROM {table}').fetchone()[0]:
+                    raise RuntimeError('Oracle source tables already exist with data; bootstrap refuses to overwrite them.')
+                ora.cursor().execute(f"SELECT {','.join(columns)} FROM {table} WHERE 1=0")
+
+        # Read the entire SQL seed before creating anything in Oracle. Connection
+        # errors or a missing source must not leave an unnecessary partial schema.
+        with sql_connection('IDB_VPDD') as sql:
+            data={table:[tuple(row) for row in sql.cursor().execute(
+                f"SELECT {','.join(columns)} FROM dbo.{table} ORDER BY MaKH")]
+                for table,columns in TABLES.items()}
+        if not data['KhachHang']:
+            raise RuntimeError('Empty SQL customer seed; bootstrap refuses to create an empty source.')
+
         ddl=(ROOT/'sql/oracle_vpdd.sql').read_text(encoding='utf-8-sig')
         ddl=re.sub(r'--[^\n]*','',ddl)
         for statement in ddl.split(';'):
-            if statement.strip(): ora.cursor().execute(statement)
-        with sql_connection('IDB_VPDD') as sql:
+            statement=statement.strip()
+            if not statement: continue
+            table=re.match(r'CREATE\s+TABLE\s+(\w+)',statement,re.I).group(1).upper()
+            if table not in existing:
+                ora.cursor().execute(statement)
+        try:
             for table,columns in TABLES.items():
-                data=[tuple(row) for row in sql.cursor().execute(f"SELECT {','.join(columns)} FROM dbo.{table} ORDER BY MaKH")]
                 marks=','.join(f':{i+1}' for i in range(len(columns)))
-                ora.cursor().executemany(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({marks})",data)
-                print(f'Demo bootstrap -> Oracle {table}: {len(data)} rows')
-        ora.commit()
+                if data[table]:
+                    ora.cursor().executemany(f"INSERT INTO {table} ({','.join(columns)}) VALUES ({marks})",data[table])
+            ora.commit()
+        except Exception:
+            ora.rollback()
+            raise
+        for table,rows in data.items():
+            print(f'Demo bootstrap -> Oracle {table}: {len(rows)} rows')
     print('Bootstrap complete. Future extraction reads Oracle; SQL demo is not the customer authority.')
 
 def prepare_stage():
