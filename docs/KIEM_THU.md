@@ -32,9 +32,23 @@ Thời gian chạy toàn bộ pipeline trên máy kiểm thử khoảng 15 phút
 
 Lưu ý khi chạy: nếu gọi `run_all.ps1` mà gộp stderr vào stdout (`*>&1`), cảnh báo deprecation của `starlette.testclient` sẽ bị PowerShell coi là lỗi và dừng script. Chạy bình thường không bị.
 
+## Pipeline Oracle + SQL Server
+
+Container `kdl-oracle` (Oracle 23.26.3.0.0) được khởi động bằng `oracle/start_oracle.ps1`; nguồn khách Oracle được nạp lại theo bộ demo mới bằng `python scripts/oracle_sync.py reset-demo` (5.000 khách, 3.334 du lịch, 2.499 bưu điện). Sau đó `sql/run_oracle_pipeline.ps1` chạy hết, mã thoát 0, khoảng 28 phút:
+
+| Kiểm tra | Kết quả |
+|---|---|
+| Oracle → STG_OracleVPDD, so toàn bộ hàng/thuộc tính | 3/3 bảng khớp |
+| Oracle → Dim_KhachHang, toàn bộ thuộc tính | 5.000 dòng khớp |
+| `validate_olap.py` | 161/161 |
+| `validate_reports.py` | 12/12 |
+| `test_api.py` | 209 |
+| `validate_idb.py` | 31/31 |
+
+Lưu ý: nếu `reset-demo` báo `WinError 10061 ... actively refused`, container Oracle đang dừng dù Docker Desktop đã bật; chạy `oracle/start_oracle.ps1` trước.
+
 ## Giới hạn
 
-- **Pipeline Oracle chưa chạy lại với bộ dữ liệu mới**: Docker không chạy trên máy lúc kiểm thử. Oracle vẫn giữ 300 khách của bộ cũ, nên trước khi chạy `run_oracle_pipeline.ps1` phải nạp lại nguồn Oracle bằng `python scripts/oracle_sync.py reset-demo` (xem ORACLE.md). Kết quả Oracle trong lượt 11/11/2026 thuộc thiết kế cũ.
 - Dữ liệu là demo: tồn đầu kỳ, nhập bổ sung theo ngưỡng và xuất theo đơn. Chưa mô phỏng trả hàng, SCD2 hay tải tăng dần.
 - Bài kiểm tra DOM stub Chart.js; không kiểm chứng hình vẽ canvas. Lượt xem trình duyệt chỉ kiểm các tương tác nêu trên, chưa rà toàn bộ giao diện ở kích thước mobile.
 
