@@ -1,7 +1,9 @@
 -- Metadata catalog, OLAP index and integration history index.
 USE [OLAP_QuanLyBanHang];
 GO
-IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE name='IX_TK_MonthlyLookup' AND object_id=OBJECT_ID('dbo.olap_tk_thang_mh_ch')) CREATE INDEX [IX_TK_MonthlyLookup] ON dbo.[olap_tk_thang_mh_ch](ch_key,mh_key,nam,thang) INCLUDE (quy,tong_ton_kho,mo_ta) WITH (MAXDOP=1);
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE name='IX_TK_MonthlyLookup' AND object_id=OBJECT_ID('dbo.olap_tk_thang_mh_ch')) CREATE INDEX [IX_TK_MonthlyLookup] ON dbo.[olap_tk_thang_mh_ch](ch_key,mh_key,nam,thang) INCLUDE (quy,tong_ton_kho,mo_ta,bang,ten_tp) WITH (MAXDOP=1);
+GO
+IF NOT EXISTS(SELECT 1 FROM sys.indexes WHERE name='IX_DS_DayStoreLookup' AND object_id=OBJECT_ID('dbo.olap_ds_ngay_mh_kh_ch')) CREATE INDEX [IX_DS_DayStoreLookup] ON dbo.[olap_ds_ngay_mh_kh_ch](nam,quy,thang,bang,ten_tp,ch_key) INCLUDE (mh_key,kh_key,loai_kh,tong_so_luong,tong_doanh_thu) WITH (MAXDOP=1);
 GO
 USE [IDB_TichHop];
 GO
@@ -21,7 +23,7 @@ DELETE dbo.Metadata_Column;DELETE dbo.Metadata_Mapping;DELETE dbo.Metadata_Relat
 INSERT dbo.Metadata_Table VALUES
  ('Dim_ThoiGian','Dimension',N'YYYYMM'),('Dim_Ngay','Dimension',N'YYYYMMDD'),
  ('Dim_VPDD','Dimension',N'city'),('Dim_CuaHang','Dimension',N'store'),('Dim_MatHang','Dimension',N'product'),('Dim_KhachHang','Dimension',N'customer; overlapping subtypes flattened'),
- ('Fact_BanHang','Fact',N'order + product'),('Fact_PhanBo','Fact',N'order + product + fulfilling store'),('Fact_Kho','Fact',N'month + store + product; periodic snapshot');
+ ('Fact_BanHang','Fact',N'day + customer + product + fulfilling store (4 dimension FKs)'),('Fact_Kho','Fact',N'month + store + product; periodic snapshot');
 INSERT dbo.Metadata_Column
 SELECT t.TableName,c.name,ty.name+CASE WHEN ty.name IN ('nvarchar','varchar') THEN '('+CAST(CASE WHEN ty.name='nvarchar' THEN c.max_length/2 ELSE c.max_length END AS VARCHAR(10))+')' WHEN ty.name IN ('decimal','numeric') THEN '('+CAST(c.precision AS VARCHAR(10))+','+CAST(c.scale AS VARCHAR(10))+')' ELSE '' END,
  c.is_nullable,CASE WHEN EXISTS(SELECT 1 FROM sys.index_columns ic JOIN sys.indexes i ON i.object_id=ic.object_id AND i.index_id=ic.index_id WHERE i.is_primary_key=1 AND ic.object_id=c.object_id AND ic.column_id=c.column_id) THEN 1 ELSE 0 END
@@ -30,13 +32,13 @@ INSERT dbo.Metadata_Relationship
 SELECT f.name,OBJECT_NAME(f.parent_object_id),COL_NAME(fc.parent_object_id,fc.parent_column_id),OBJECT_NAME(f.referenced_object_id),COL_NAME(fc.referenced_object_id,fc.referenced_column_id)
 FROM sys.foreign_keys f JOIN sys.foreign_key_columns fc ON fc.constraint_object_id=f.object_id JOIN dbo.Metadata_Table t ON t.TableName=OBJECT_NAME(f.parent_object_id);
 INSERT dbo.Metadata_Hierarchy VALUES
- ('Time',0,'all',''),('Time',1,'nam','nam'),('Time',2,'quy','nam,quy'),('Time',3,'thang','nam,quy,thang'),
+ ('Time',0,'all',''),('Time',1,'nam','nam'),('Time',2,'quy','nam,quy'),('Time',3,'thang','nam,quy,thang'),('Time',4,'ngay','nam,quy,thang,ngay'),
  ('Product',0,'all',''),('Product',1,'mh','mh_key'),
  ('Customer',0,'all',''),('Customer',1,'loai_kh','loai_kh'),('Customer',2,'kh','kh_key'),
- ('Location',0,'all',''),('Location',1,'tinh','bang'),('Location',2,'tp','bang,ten_tp'),('Location',3,'ch','ch_key');
+ ('Location',0,'all',''),('Location',1,'tinh','bang'),('Location',2,'tp','bang,ten_tp'),('Location',3,'ch','bang,ten_tp,ch_key');
 INSERT dbo.Metadata_Cube
 SELECT t.name,CASE WHEN t.name LIKE 'olap_ds_%' THEN 'Sales' ELSE 'Inventory' END,
- CASE WHEN t.name LIKE '%[_]thang%' THEN 'thang' WHEN t.name LIKE '%[_]quy%' THEN 'quy' WHEN t.name LIKE '%[_]nam%' THEN 'nam' ELSE 'all' END,
+ CASE WHEN t.name LIKE '%[_]ngay%' THEN 'ngay' WHEN t.name LIKE '%[_]thang%' THEN 'thang' WHEN t.name LIKE '%[_]quy%' THEN 'quy' WHEN t.name LIKE '%[_]nam%' THEN 'nam' ELSE 'all' END,
  STRING_AGG(CAST(CASE WHEN c.name NOT IN ('tong_so_luong','tong_doanh_thu','tong_ton_kho') THEN c.name END AS NVARCHAR(MAX)),','),
  CASE WHEN t.name LIKE 'olap_ds_%' THEN 'tong_so_luong,tong_doanh_thu' ELSE 'tong_ton_kho' END,
  CASE WHEN t.name LIKE 'olap_ds_%' THEN N'SUM over dimensions' ELSE N'Last snapshot in period per store/product, then SUM across store/product; never SUM over time' END
@@ -68,21 +70,15 @@ INSERT dbo.Metadata_Mapping VALUES
 ('Dim_ThoiGian','thang',N'MIN/MAX month bounds of IDB_TichHop.dbo.TonKhoThang UNION ALL order months from IDB_TichHop.dbo.DonDatHang',N'MONTH(d)'),
 ('Dim_ThoiGian','quy',N'MIN/MAX month bounds of IDB_TichHop.dbo.TonKhoThang UNION ALL order months from IDB_TichHop.dbo.DonDatHang',N'DATEPART(QUARTER,d)'),
 ('Dim_ThoiGian','nam',N'MIN/MAX month bounds of IDB_TichHop.dbo.TonKhoThang UNION ALL order months from IDB_TichHop.dbo.DonDatHang',N'YEAR(d)'),
-('Dim_Ngay','ngay_key',N'IDB_TichHop.dbo.DonDatHang',N'YEAR(NgayDatHang)*10000+MONTH(NgayDatHang)*100+DAY(NgayDatHang)'),
-('Dim_Ngay','ngay',N'IDB_TichHop.dbo.DonDatHang',N'NgayDatHang'),
-('Dim_Ngay','time_key',N'IDB_TichHop.dbo.DonDatHang',N'YEAR(NgayDatHang)*100+MONTH(NgayDatHang)'),
-('Fact_BanHang','ma_don',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'MaDon'),
-('Fact_BanHang','mh_key',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'MaMH; business key converted to NVARCHAR when target is a dimension key'),
-('Fact_BanHang','kh_key',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'MaKH; business key converted to NVARCHAR when target is a dimension key'),
-('Fact_BanHang','ngay_key',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'YYYYMMDD(NgayDatHang)'),
-('Fact_BanHang','time_key',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'YYYYMM(NgayDatHang)'),
-('Fact_BanHang','so_luong',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'SoLuongDat'),
-('Fact_BanHang','gia_dat',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'GiaDat'),
-('Fact_BanHang','tong_tien',N'IDB_TichHop.dbo.DonDatHang JOIN MatHangDuocDat',N'SoLuongDat*GiaDat'),
-('Fact_PhanBo','ma_don',N'IDB_TichHop.dbo.PhanBoDonHang',N'MaDon'),
-('Fact_PhanBo','mh_key',N'IDB_TichHop.dbo.PhanBoDonHang',N'MaMH; business key converted to NVARCHAR when target is a dimension key'),
-('Fact_PhanBo','ch_key',N'IDB_TichHop.dbo.PhanBoDonHang',N'MaCuaHang; business key converted to NVARCHAR when target is a dimension key'),
-('Fact_PhanBo','so_luong_cap',N'IDB_TichHop.dbo.PhanBoDonHang',N'SoLuongCap'),
+('Dim_Ngay','ngay_key',N'Continuous calendar over the months of Dim_ThoiGian',N'YEAR(d)*10000+MONTH(d)*100+DAY(d)'),
+('Dim_Ngay','ngay',N'Continuous calendar over the months of Dim_ThoiGian',N'd'),
+('Dim_Ngay','time_key',N'Continuous calendar over the months of Dim_ThoiGian',N'YEAR(d)*100+MONTH(d); FK to Dim_ThoiGian'),
+('Fact_BanHang','ngay_key',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'YYYYMMDD(NgayDatHang); FK to Dim_Ngay'),
+('Fact_BanHang','kh_key',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'MaKH of the order; FK to Dim_KhachHang'),
+('Fact_BanHang','mh_key',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'MaMH; FK to Dim_MatHang'),
+('Fact_BanHang','ch_key',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'MaCuaHang of the fulfilling store; FK to Dim_CuaHang'),
+('Fact_BanHang','so_luong',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'SUM(SoLuongCap) GROUP BY day, customer, product, store'),
+('Fact_BanHang','doanh_thu',N'IDB_TichHop.dbo.PhanBoDonHang JOIN MatHangDuocDat JOIN DonDatHang',N'SUM(SoLuongCap*GiaDat) GROUP BY day, customer, product, store'),
 ('Fact_Kho','time_key',N'IDB_TichHop.dbo.TonKhoThang',N'ThangKey'),
 ('Fact_Kho','ch_key',N'IDB_TichHop.dbo.TonKhoThang',N'MaCuaHang; business key converted to NVARCHAR when target is a dimension key'),
 ('Fact_Kho','mh_key',N'IDB_TichHop.dbo.TonKhoThang',N'MaMH; business key converted to NVARCHAR when target is a dimension key'),

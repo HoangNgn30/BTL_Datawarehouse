@@ -1,10 +1,10 @@
-﻿# Chạy và kiểm tra bài tập lớn Kho dữ liệu
+# Chạy và kiểm tra bài tập lớn Kho dữ liệu
 
 Bản chạy chính: `dw-dm/main.py` + `dw-dm/static/`. React tùy chọn nhúng giao diện chính qua iframe. Các entry point và component thử nghiệm cũ đã được loại bỏ.
 
 ## 1. Điều kiện
 
-SQL Server, `sqlcmd`, ODBC Driver 17 for SQL Server, Python với `pyodbc python-dotenv fastapi uvicorn httpx`. SQL Server cần quyền tạo CSDL. Nguồn demo và DW dùng full refresh.
+SQL Server, `sqlcmd`, ODBC Driver 17 for SQL Server, Python 3.13 với các gói trong `dw-dm/requirements.txt` (`python -m pip install -r dw-dm/requirements.txt`). SQL Server cần quyền tạo CSDL. Nguồn demo và DW dùng full refresh.
 
 ## 2. Tạo dữ liệu demo và kho
 
@@ -16,7 +16,7 @@ Từ thư mục `D:\KDL&KPDL\BTL_Datawarehouse`:
 
 Instance này đã được dùng kiểm thử. Nếu nguồn demo đã tồn tại, lệnh dừng để bảo vệ dữ liệu. Chỉ khi chủ động muốn xóa và tạo lại **hai CSDL demo IDB_VPDD, IDB_BanHang**, thêm `-ResetDemo`. Pipeline cũng thay thế nội dung `DW_Core` và `OLAP_QuanLyBanHang`; chọn instance riêng cho bài tập. Với SQL authentication dùng `-User` và `-Password` thay cho `-Trusted`; không ghi mật khẩu vào Git.
 
-Các bước: nguồn → phân bổ đơn/ledger/snapshot → ETL galaxy → 56 cuboid → đối chiếu nguồn. Lỗi ở bất kỳ bước nào khiến script trả lỗi và dừng.
+Các bước: nguồn (5.000 khách, 55.000 đơn) → `allocate_orders.py` phân bổ đơn, nhập/xuất kho, snapshot tháng → IDB tích hợp → ETL galaxy (Fact_BanHang khóa ngày–khách–mặt hàng–cửa hàng, Fact_Kho) → `gen_cuboids.py` sinh và vật hóa 152 cuboid → metadata/index → đối chiếu nguồn. Toàn bộ mất khoảng 10–20 phút tùy máy, phần lâu nhất là vật hóa cuboid và đối chiếu. Lỗi ở bất kỳ bước nào khiến script trả lỗi và dừng.
 
 ## 3. Mở ứng dụng
 

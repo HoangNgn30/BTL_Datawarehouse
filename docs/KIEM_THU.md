@@ -1,48 +1,41 @@
-﻿# Kết quả kiểm thử — 11/11/2026
+﻿# Kết quả kiểm thử — 19/11/2026 (thiết kế fact 4 chiều)
 
 ## Môi trường và phạm vi
 
-SQL Server trên instance riêng `.\MSSQLSERVER01`, Windows Authentication, ODBC Driver 17, Python 3.13. Instance được kiểm tra trống trước khi tạo các CSDL demo. Không sửa `.env` cá nhân hoặc chạy reset trên các instance chứa dữ liệu có sẵn của người dùng.
+SQL Server trên instance riêng `.\MSSQLSERVER01`, Windows Authentication, ODBC Driver 17, Python 3.13 (pyodbc 5.2.0, oracledb 26.1). Chạy chế độ **SQL-only** (`sql/run_all.ps1 -ResetDemo`): nguồn demo được tạo lại hoàn toàn. Không sửa `.env` cá nhân.
 
-Nguồn: 12 thành phố, 30 cửa hàng, 60 mặt hàng, 300 khách, 1.500 đơn và 3.000 dòng đơn. Kết quả: 3.010 dòng phân bổ (một số dòng đơn tách cửa hàng), 35.172 snapshot tháng từ 977 cặp cửa hàng–mặt hàng, 56 cuboid.
+Nguồn: 12 thành phố (8 bang), 50 cửa hàng, 100 mặt hàng, 5.000 khách, 55.000 đơn và 115.500 dòng đơn, giai đoạn 2021–2023.
+
+Kết quả phân bổ: 115.519 lần cấp hàng (có dòng đơn tách cửa hàng), trong đó 1.318 lần cấp từ cửa hàng ở thành phố khác thành phố của khách. Sổ cái 121.874 bút toán, gồm 2.911 lần nhập bổ sung. Snapshot cuối tháng: 123.984 dòng từ 3.444 cặp cửa hàng–mặt hàng.
+
+| Bảng | Số dòng | Khóa |
+|---|---|---|
+| Fact_BanHang | **115.381** | ngay_key + kh_key + mh_key + ch_key |
+| Fact_Kho | **123.984** | time_key + ch_key + mh_key |
+| Cuboid | 152 (120 bán hàng + 32 tồn kho) | |
 
 ## Bằng chứng đã chạy
 
-| Kiểm tra | Kết quả | Bằng chứng |
-|---|---|---|
-| Nguồn → phân bổ/ledger → ETL → vật hóa cuboid → đối chiếu | 62/62 đạt; đủ 56 bảng | output/validation/pipeline.log |
-| Đối chiếu từng hàng 9 báo cáo (thêm ca tham số thời gian cho YC2, YC4, YC7) với truy vấn nguồn | 12/12 ca phải đạt (chưa chạy lại sau khi sửa) | output/validation/reports.log |
-| Tất cả tổ hợp trục, bộ lọc, pivot đảo chiều, drill-through, API báo cáo, tồn cuối quý | 87 kiểm tra đạt | output/validation/api.log |
-| Chặn khởi tạo đè nguồn khi thiếu -ResetDemo | Dừng với SQL error 51000, trước bước xóa nguồn | output/validation/reset_guard.log |
-| SQL mẫu cho 9 yêu cầu chạy trực tiếp | sqlcmd exit 0 | output/validation/report_sql.log |
-| Cú pháp Python | py_compile không lỗi | main, query builder, các entry point và script kiểm tra |
-| JavaScript tĩnh | Hai script inline parse thành công | Node vm.Script trên index.html và bao_cao.html |
-| React production build | Compiled successfully; JS gzip 45.63 kB | react-scripts build, Node bundled |
-| Trình duyệt Chrome | Dashboard có số liệu, Sales theo quý trả 12 dòng; YC2 khách 1 trả đúng 5 đơn/ngày | Kiểm tra trực tiếp tại cổng 8017 |
+| Kiểm tra | Kết quả |
+|---|---|
+| `validate_olap.py`: từng hàng của 152 cuboid so với truy vấn trực tiếp trên nguồn; sổ cái → snapshot; phân bổ → Fact_BanHang theo khóa 4 chiều; tổng fact = tổng dòng đơn; đủ lượng đặt; snapshot → Fact_Kho; tồn hiện tại; không âm; mỗi fact ≥ 100.000 dòng | **161/161** đạt |
+| `validate_reports.py`: từng hàng của 9 báo cáo (thêm ca tham số thời gian cho YC2, YC4, YC7) so với truy vấn nguồn | **12/12** đạt |
+| `test_api.py`: mọi tổ hợp trục của hai lưới (120 + 32), lọc, slice/dice/drill-down theo vị trí, roll-up ngày→tháng và cửa hàng→bang (tổng không đổi), pivot đảo chiều 4 cặp, drill-across theo bang, drill-through theo cửa hàng, báo cáo 1–9, tồn cuối quý khi hiển thị năm, các lỗi 400/422 | **209** kiểm tra đạt |
+| `validate_idb.py`: nguồn → IDB, FK tin cậy, metadata đủ cột/ánh xạ, 152 cuboid và 14 mức phân cấp đã đăng ký, khóa Fact_BanHang đúng bằng 4 khóa ngoại, 10 index | **31/31** đạt |
+| `test_api_contracts.py` (không cần DB) | 14/14 đạt |
+| `test_ui_regressions.cjs` (không cần DB) | đạt |
+| `test_ui_dom.cjs` với API thật tại cổng 8017 | đạt; báo cáo 2 có 11 dòng, báo cáo 9 có 833 dòng |
+| `test_oracle_bootstrap.py` (adapter giả, không chạm nguồn thật) | 6/6 đạt |
+| Trình duyệt: tab Doanh số chọn Năm × Thành phố → `olap_ds_nam_tp`, 36 dòng; chọn đủ 4 chiều → `olap_ds_ngay_mh_kh_ch`, hiển thị 2.000/115.381 dòng; drill-across theo bang 24 dòng; roll-up cửa hàng → thành phố | đúng |
 
-Các lỗi hồi quy đã kiểm tra gồm slice năm→loại KH, khách lọc mặt hàng, năm lọc quý, tồn theo bang lọc mặt hàng, quý/tháng không tương thích, giới hạn drill-through âm và pivot mặt hàng/năm theo cả hai chiều. Tồn lọc quý 2/2022 nhưng hiển thị năm được so với snapshot tháng 06/2022.
+Thời gian chạy toàn bộ pipeline trên máy kiểm thử khoảng 15 phút; phần lâu nhất là vật hóa 152 cuboid (~5 phút) và đối chiếu từng hàng.
 
-Tiền được so sánh bằng Decimal trong kiểm tra cuboid. Các báo cáo được so sánh theo nội dung hàng, không phụ thuộc thứ tự trả về. Bộ kiểm tra báo cáo dùng tham số mẫu (khách 1, đơn 1, mặt hàng 1, thành phố 1, ngưỡng 100, loại CaHai); không tuyên bố vét cạn mọi tổ hợp tham số.
+Lưu ý khi chạy: nếu gọi `run_all.ps1` mà gộp stderr vào stdout (`*>&1`), cảnh báo deprecation của `starlette.testclient` sẽ bị PowerShell coi là lỗi và dừng script. Chạy bình thường không bị.
 
-## Giới hạn và điểm còn cần hoàn thiện trước khi nộp
+## Giới hạn
 
-- Oracle đã triển khai thực tế bằng container KDL riêng; nguồn khách hàng được đọc qua thin driver vào staging rồi DW. Chi tiết bổ sung bên dưới.
-- Dữ liệu là demo có giả định tồn đầu kỳ và chỉ có xuất kho. Chưa mô phỏng nhập/trả hàng, SCD2 hay tải tăng dần.
-- Máy từng có áp lực RAM: SQL Server báo RESOURCE_SEMAPHORE và một lượt kết nối bị timeout. Chạy lại tuần tự đạt các kết quả ở bảng trên; đây không phải kết quả đo tải hay cam kết thời gian phản hồi.
-- React hiện nhúng giao diện FastAPI qua iframe để dùng chung luồng API. Các component thử nghiệm cũ không nằm trong bản chạy.
+- **Pipeline Oracle chưa chạy lại với bộ dữ liệu mới**: Docker không chạy trên máy lúc kiểm thử. Oracle vẫn giữ 300 khách của bộ cũ, nên trước khi chạy `run_oracle_pipeline.ps1` phải nạp lại nguồn Oracle bằng `python scripts/oracle_sync.py reset-demo` (xem ORACLE.md). Kết quả Oracle trong lượt 11/11/2026 thuộc thiết kế cũ.
+- Dữ liệu là demo: tồn đầu kỳ, nhập bổ sung theo ngưỡng và xuất theo đơn. Chưa mô phỏng trả hàng, SCD2 hay tải tăng dần.
+- Bài kiểm tra DOM stub Chart.js; không kiểm chứng hình vẽ canvas. Lượt xem trình duyệt chỉ kiểm các tương tác nêu trên, chưa rà toàn bộ giao diện ở kích thước mobile.
 
-Tài liệu thiết kế và sơ đồ nằm trong BAO_CAO.md. Lệnh chạy đầy đủ trong SETUP.md.
-
-
-## Bổ sung Oracle và giao diện A
-
-- Oracle thực tế: **23.26.3.0.0**, service FREEPDB1, schema KDL_VPDD; 300 khách, 200 bản ghi du lịch, 150 bưu điện.
-- `output/validation/oracle-regressions.log`: **2/2** ca tích hợp đạt; sửa tên tiếng Việt ở Oracle đi tới DW, khóa thành phố sai bị từ chối và staging rollback; dữ liệu thử được khôi phục.
-- `output/validation/oracle-pipeline.log`: pipeline hai hệ quản trị chạy hết, **62/62** đối chiếu, **9/9** báo cáo, **87** kiểm tra API đạt. Verify so sánh toàn bộ thuộc tính Oracle → staging → Dim_KhachHang.
-- `output/validation/ui-dom.log`: các tương tác DOM đạt với API thật: chỉ số/bảng tổng quan, lọc doanh số, custom select, drill-through, mở/đóng menu, báo cáo 2 có 5 dòng và báo cáo 9 có 50 dòng. Chart.js được stub trong bài kiểm tra DOM; không kiểm chứng hình vẽ canvas hay kích thước bố cục bằng bài kiểm tra này.
-- Wireframe A/B/C đã mở bằng probe ở 375/1440; người dùng chọn A. Bản UI thật có lượt probe nhanh ở 375/1440. Lượt này trùng lúc full refresh nên ảnh 1440 có lỗi tải API tạm thời; lỗi cỡ chữ 11px được sửa thành 12px. Các API đã đạt sau khi refresh hoàn tất.
-- **Chưa hoàn tất kiểm thử trực quan cuối/sweep/so sánh pixel và thao tác bàn phím trong trình duyệt thật.** Công cụ Computer Use tự dừng vì không xác định chắc URL hiện tại trên Windows để kiểm tra chính sách. Không coi kiểm tra DOM là thay thế cho lượt này.
-
-Thay đổi hiệu năng demo: ETL và vật hóa cuboid dùng MAXDOP 1, MAX_GRANT_PERCENT=0 để xin mức bộ nhớ tối thiểu trong default resource pool; Oracle SGA target 768MB và PGA target 128MB, trong giới hạn container 2GB. Đây là cấu hình cho bộ dữ liệu nhỏ, không phải cấu hình đo tải sản xuất.
-
-- Khởi động lại Oracle qua start_oracle.ps1 đã đạt healthy, giữ volume và đối chiếu lại toàn bộ Oracle → staging → DW thành công: output/validation/oracle-restart.log.
+Tài liệu thiết kế trong BAO_CAO.md, đặc tả cuboid trong CUBOID_SPEC.md, lệnh chạy trong SETUP.md.

@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
-from cube_queries import sales_query, inventory_query, DIM_COLS_DS, DIM_COLS_TK
+from cube_queries import sales_query, inventory_query, TOTAL_COLUMN
+from cube_schema import HIERARCHIES
 from typing import Optional
 
 import pyodbc
@@ -26,6 +27,9 @@ DB_PASSWORD = os.getenv("DB_PASSWORD", "")
 DB_DRIVER = os.getenv("DB_DRIVER", "ODBC Driver 17 for SQL Server")
 DB_OLAP = os.getenv("DB_OLAP", "OLAP_QuanLyBanHang")
 DB_DW = os.getenv("DB_DW", "DW_Core")
+DB_IDB = os.getenv("DB_IDB", "IDB_TichHop")
+CUSTOMER_TYPE = ("CASE WHEN dl.MaKH IS NOT NULL AND bd.MaKH IS NOT NULL THEN N'CaHai' "
+                 "WHEN dl.MaKH IS NOT NULL THEN N'DuLich' WHEN bd.MaKH IS NOT NULL THEN N'BuuDien' ELSE N'Khac' END")
 
 
 def _conn_str(database: str) -> str:
@@ -111,7 +115,7 @@ def get_tinh():
 
 
 # =====================================================================
-# Sales Cube
+# Sales Cube (4 chiều) và Inventory Cube (3 chiều)
 # =====================================================================
 @app.get("/api/doanh-so/tong")
 def get_doanh_so_tong():
@@ -124,30 +128,47 @@ def cube_response(builder, **kwargs):
         table, dims, lattice, sql, params = builder(**kwargs)
     except ValueError as error:
         raise HTTPException(400, str(error)) from error
-    return {"cuboid": table, "dim_cols": dims, "lattice": lattice, "data": query_all(DB_OLAP, sql, params)}
+    rows = query_all(DB_OLAP, sql, params)
+    total = len(rows)
+    for row in rows:
+        total = row.pop(TOTAL_COLUMN, total)
+    return {"cuboid": table, "dim_cols": dims, "lattice": lattice, "data": rows,
+            "tong_so_dong": total, "bi_cat_bot": total > len(rows)}
+
+
+MAX_ROWS = 200000
+SALES_GROUPS = {"nam": "time", "quy": "time", "thang": "time", "ngay": "time", "mh": "mh",
+                "loai_kh": "kh", "kh": "kh", "tinh": "loc", "tp": "loc", "ch": "loc"}
+INVENTORY_GROUPS = {key: axis for key, axis in SALES_GROUPS.items() if axis != "kh" and key != "ngay"}
 
 
 @app.get("/api/doanh-so/v2")
 def get_sales_v2(time_axis: str = "none", mh_axis: str = "none", kh_axis: str = "none",
+                 loc_axis: str = "none",
                  loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
                  loc_thang: Optional[int] = None, loc_loai_kh: Optional[str] = None,
-                 loc_mh: Optional[str] = None, loc_kh: Optional[str] = None):
+                 loc_mh: Optional[str] = None, loc_kh: Optional[str] = None,
+                 loc_bang: Optional[str] = None, loc_tp: Optional[str] = None,
+                 loc_ch: Optional[str] = None, limit: int = Query(2000, ge=1, le=MAX_ROWS)):
     return cube_response(sales_query, time_axis=time_axis, mh_axis=mh_axis, kh_axis=kh_axis,
-                         nam=loc_nam, quy=loc_quy, thang=loc_thang,
-                         loai_kh=loc_loai_kh, mh_key=loc_mh, kh_key=loc_kh)
+                         loc_axis=loc_axis, limit=limit, nam=loc_nam, quy=loc_quy, thang=loc_thang,
+                         loai_kh=loc_loai_kh, mh_key=loc_mh, kh_key=loc_kh,
+                         bang=loc_bang, ten_tp=loc_tp, ch_key=loc_ch)
 
 
 @app.get("/api/doanh-so")
 def get_doanh_so(nhom: str, loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
                 loc_loai_kh: Optional[str] = None, loc_mh: Optional[str] = None,
-                loc_kh: Optional[str] = None, loc_thang: Optional[int] = None):
-    if nhom not in {"nam", "quy", "thang", "mh", "loai_kh", "kh"}:
+                loc_kh: Optional[str] = None, loc_thang: Optional[int] = None,
+                loc_bang: Optional[str] = None, loc_tp: Optional[str] = None,
+                loc_ch: Optional[str] = None, limit: int = Query(2000, ge=1, le=MAX_ROWS)):
+    if nhom not in SALES_GROUPS:
         raise HTTPException(400, "Nhóm doanh số không hợp lệ")
-    return get_sales_v2(time_axis=nhom if nhom in {"nam", "quy", "thang"} else "none",
-                        mh_axis="mh" if nhom == "mh" else "none",
-                        kh_axis=nhom if nhom in {"kh", "loai_kh"} else "none",
-                        loc_nam=loc_nam, loc_quy=loc_quy, loc_thang=loc_thang,
-                        loc_loai_kh=loc_loai_kh, loc_mh=loc_mh, loc_kh=loc_kh)
+    axes = {"time_axis": "none", "mh_axis": "none", "kh_axis": "none", "loc_axis": "none"}
+    axes[SALES_GROUPS[nhom] + "_axis"] = nhom
+    return get_sales_v2(**axes, loc_nam=loc_nam, loc_quy=loc_quy, loc_thang=loc_thang,
+                        loc_loai_kh=loc_loai_kh, loc_mh=loc_mh, loc_kh=loc_kh,
+                        loc_bang=loc_bang, loc_tp=loc_tp, loc_ch=loc_ch, limit=limit)
 
 
 @app.get("/api/ton-kho/tong")
@@ -160,59 +181,53 @@ def get_inventory_v2(time_axis: str = "none", mh_axis: str = "none", loc_axis: s
                      loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
                      loc_thang: Optional[int] = None, loc_bang: Optional[str] = None,
                      loc_mh: Optional[str] = None, loc_ch: Optional[str] = None,
-                     loc_tp: Optional[str] = None):
-    return cube_response(inventory_query, dw_database=DB_DW, time_axis=time_axis,
-                         mh_axis=mh_axis, loc_axis=loc_axis, nam=loc_nam, quy=loc_quy,
-                         thang=loc_thang, bang=loc_bang, mh_key=loc_mh, ch_key=loc_ch, ten_tp=loc_tp)
+                     loc_tp: Optional[str] = None, limit: int = Query(2000, ge=1, le=MAX_ROWS)):
+    return cube_response(inventory_query, time_axis=time_axis, mh_axis=mh_axis, loc_axis=loc_axis,
+                         limit=limit, nam=loc_nam, quy=loc_quy, thang=loc_thang, bang=loc_bang,
+                         mh_key=loc_mh, ch_key=loc_ch, ten_tp=loc_tp)
 
 
 @app.get("/api/ton-kho")
 def get_ton_kho(nhom: str, loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
                loc_bang: Optional[str] = None, loc_mh: Optional[str] = None,
-               loc_ch: Optional[str] = None, loc_thang: Optional[int] = None):
-    if nhom not in {"nam", "quy", "thang", "mh", "tinh", "tp", "ch"}:
+               loc_ch: Optional[str] = None, loc_thang: Optional[int] = None,
+               loc_tp: Optional[str] = None, limit: int = Query(2000, ge=1, le=MAX_ROWS)):
+    if nhom not in INVENTORY_GROUPS:
         raise HTTPException(400, "Nhóm tồn kho không hợp lệ")
-    return get_inventory_v2(time_axis=nhom if nhom in {"nam", "quy", "thang"} else "none",
-                            mh_axis="mh" if nhom == "mh" else "none",
-                            loc_axis=nhom if nhom in {"tinh", "tp", "ch"} else "none",
-                            loc_nam=loc_nam, loc_quy=loc_quy, loc_thang=loc_thang,
-                            loc_bang=loc_bang, loc_mh=loc_mh, loc_ch=loc_ch)
+    axes = {"time_axis": "none", "mh_axis": "none", "loc_axis": "none"}
+    axes[INVENTORY_GROUPS[nhom] + "_axis"] = nhom
+    return get_inventory_v2(**axes, loc_nam=loc_nam, loc_quy=loc_quy, loc_thang=loc_thang,
+                            loc_bang=loc_bang, loc_mh=loc_mh, loc_ch=loc_ch, loc_tp=loc_tp, limit=limit)
 
 
 # =====================================================================
-# 7 OLAP operations
+# Các thao tác OLAP
 # =====================================================================
 @app.get("/api/olap/roll-up")
 def olap_roll_up(cube: str, tu: str, len_: str = Query(..., alias="len")):
-    """Roll-up: chuyển sang cuboid level cao hơn."""
-    hierarchy = {"nam": 0, "quy": 1, "thang": 2}
-    if tu not in hierarchy or len_ not in hierarchy or hierarchy[tu] <= hierarchy[len_]:
-        raise HTTPException(400, "Roll-up chỉ hỗ trợ tháng → quý, tháng → năm hoặc quý → năm")
-    if cube == "ds":
-        return get_doanh_so(nhom=len_)
-    if cube == "tk":
-        return get_ton_kho(nhom=len_)
-    raise HTTPException(400, "cube phải là 'ds' hoặc 'tk'")
+    """Roll-up: đi lên trong cùng một phân cấp (ngày → tháng → quý → năm; cửa hàng → thành phố → bang)."""
+    if cube not in ("ds", "tk"):
+        raise HTTPException(400, "cube phải là 'ds' hoặc 'tk'")
+    hierarchy = next((h for h in (HIERARCHIES["time"], HIERARCHIES["loc"]) if tu in h and len_ in h), None)
+    if hierarchy is None or hierarchy.index(tu) <= hierarchy.index(len_) or (cube == "tk" and tu == "ngay"):
+        raise HTTPException(400, "Roll-up phải đi từ cấp chi tiết lên cấp tổng hợp hơn trong cùng một phân cấp")
+    return get_doanh_so(nhom=len_, limit=2000) if cube == "ds" else get_ton_kho(nhom=len_, limit=2000)
 
 
 @app.get("/api/olap/drill-down")
-def olap_drill_down(
-    cube: str,
-    xuong: str,
-    loc_nam: Optional[int] = None,
-    loc_quy: Optional[int] = None,
-    loc_bang: Optional[str] = None,
-):
+def olap_drill_down(cube: str, xuong: str, loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
+                    loc_bang: Optional[str] = None, loc_tp: Optional[str] = None):
+    """Drill-down: xuống cấp chi tiết hơn, giữ điều kiện của cấp trên (năm, quý, bang, thành phố)."""
     if cube == "ds":
-        return get_doanh_so(nhom=xuong, loc_nam=loc_nam, loc_quy=loc_quy)
+        return get_doanh_so(nhom=xuong, loc_nam=loc_nam, loc_quy=loc_quy, loc_bang=loc_bang, loc_tp=loc_tp, limit=2000)
     if cube == "tk":
-        return get_ton_kho(nhom=xuong, loc_nam=loc_nam, loc_quy=loc_quy, loc_bang=loc_bang)
+        return get_ton_kho(nhom=xuong, loc_nam=loc_nam, loc_quy=loc_quy, loc_bang=loc_bang, loc_tp=loc_tp, limit=2000)
     raise HTTPException(400, "cube phải là 'ds' hoặc 'tk'")
 
 
 @app.get("/api/olap/slice")
 def olap_slice(cube: str, chieu: str, gia_tri: str):
-    """Slice: cố định 1 chiều = 1 giá trị, group theo chiều khác."""
+    """Slice: cố định 1 chiều = 1 giá trị, nhóm theo chiều khác."""
     if chieu == "nam":
         try:
             int(gia_tri)
@@ -220,144 +235,155 @@ def olap_slice(cube: str, chieu: str, gia_tri: str):
             raise HTTPException(400, "Năm phải là số nguyên")
     if cube == "ds":
         if chieu == "nam":
-            return get_doanh_so(nhom="loai_kh", loc_nam=int(gia_tri))
+            return get_doanh_so(nhom="loai_kh", loc_nam=int(gia_tri), limit=2000)
         if chieu == "loai_kh":
-            return get_doanh_so(nhom="nam", loc_loai_kh=gia_tri)
+            return get_doanh_so(nhom="nam", loc_loai_kh=gia_tri, limit=2000)
         if chieu == "mh":
-            return get_doanh_so(nhom="nam", loc_mh=gia_tri)
+            return get_doanh_so(nhom="nam", loc_mh=gia_tri, limit=2000)
         if chieu == "bang":
-            raise HTTPException(400, "Sales cube không có chiều địa lý (bang); hãy slice bang trên cube tồn kho")
+            return get_doanh_so(nhom="nam", loc_bang=gia_tri, limit=2000)
     if cube == "tk":
         if chieu == "nam":
-            return get_ton_kho(nhom="tinh", loc_nam=int(gia_tri))
+            return get_ton_kho(nhom="tinh", loc_nam=int(gia_tri), limit=2000)
         if chieu == "bang":
-            return get_ton_kho(nhom="nam", loc_bang=gia_tri)
+            return get_ton_kho(nhom="nam", loc_bang=gia_tri, limit=2000)
         if chieu == "mh":
-            return get_ton_kho(nhom="nam", loc_mh=gia_tri)
+            return get_ton_kho(nhom="nam", loc_mh=gia_tri, limit=2000)
         if chieu == "loai_kh":
             raise HTTPException(400, "Cube tồn kho không có chiều loại khách hàng")
     raise HTTPException(400, "Tham số slice không hợp lệ")
 
 
 @app.get("/api/olap/dice")
-def olap_dice(
-    cube: str,
-    nhom: str = "nam",
-    loc_nam: Optional[int] = None,
-    loc_quy: Optional[int] = None,
-    loc_loai_kh: Optional[str] = None,
-    loc_bang: Optional[str] = None,
-    loc_mh: Optional[str] = None,
-):
+def olap_dice(cube: str, nhom: str = "nam", loc_nam: Optional[int] = None, loc_quy: Optional[int] = None,
+              loc_loai_kh: Optional[str] = None, loc_bang: Optional[str] = None,
+              loc_mh: Optional[str] = None, loc_tp: Optional[str] = None):
     if cube == "ds":
-        return get_doanh_so(
-            nhom=nhom, loc_nam=loc_nam, loc_quy=loc_quy,
-            loc_loai_kh=loc_loai_kh, loc_mh=loc_mh,
-        )
+        return get_doanh_so(nhom=nhom, loc_nam=loc_nam, loc_quy=loc_quy, loc_loai_kh=loc_loai_kh,
+                            loc_mh=loc_mh, loc_bang=loc_bang, loc_tp=loc_tp, limit=2000)
     if cube == "tk":
-        return get_ton_kho(
-            nhom=nhom, loc_nam=loc_nam, loc_quy=loc_quy,
-            loc_bang=loc_bang, loc_mh=loc_mh,
-        )
+        if loc_loai_kh:
+            raise HTTPException(400, "Cube tồn kho không có chiều loại khách hàng")
+        return get_ton_kho(nhom=nhom, loc_nam=loc_nam, loc_quy=loc_quy, loc_bang=loc_bang,
+                           loc_mh=loc_mh, loc_tp=loc_tp, limit=2000)
     raise HTTPException(400, "cube phải là 'ds' hoặc 'tk'")
+
+
+# Pivot dimension -> (axis argument, level, label column)
+PIVOT_DIMS = {"nam": ("time_axis", "nam", "nam"), "loai_kh": ("kh_axis", "loai_kh", "loai_kh"),
+              "mh": ("mh_axis", "mh", "mh_key"), "bang": ("loc_axis", "tinh", "bang")}
 
 
 @app.get("/api/olap/pivot")
 def olap_pivot(cube: str, hang: str, cot: str):
-    """Pivot: trả ma trận hàng × cột."""
-    if cube == "ds":
-        # Map hang+cot -> nhom thích hợp
-        valid = {("nam", "loai_kh"), ("loai_kh", "nam"), ("nam", "mh"), ("mh", "nam")}
-        if (hang, cot) not in valid:
-            raise HTTPException(400, f"Cặp hang/cot không hỗ trợ: {hang}/{cot}")
-        if {hang, cot} == {"nam", "loai_kh"}:
-            table = "olap_ds_nam_loai_kh"
-            sql = f"SELECT nam, loai_kh, tong_doanh_thu FROM {table}"
-        else:
-            table = "olap_ds_nam_mh"
-            sql = f"SELECT nam, mh_key, mo_ta, tong_doanh_thu FROM {table}"
-        rows = query_all(DB_OLAP, sql)
-        hang_field = "mh_key" if hang == "mh" else hang
-        cot_field = "mh_key" if cot == "mh" else cot
-        def natural_key(value):
-            return (0, int(value)) if value.lstrip('-').isdigit() else (1, value)
-        labels_hang = sorted({str(r[hang_field]) for r in rows}, key=natural_key)
-        labels_cot = sorted({str(r[cot_field]) for r in rows}, key=natural_key)
-        idx_h = {v: i for i, v in enumerate(labels_hang)}
-        idx_c = {v: i for i, v in enumerate(labels_cot)}
-        matrix = [[Decimal(0) for _ in labels_cot] for _ in labels_hang]
-        for r in rows:
-            h = str(r[hang_field])
-            c = str(r[cot_field])
-            if h in idx_h and c in idx_c:
-                value = r["tong_doanh_thu"]
-                if value is not None:
-                    matrix[idx_h[h]][idx_c[c]] += Decimal(str(value))
-        return {"labels_hang": labels_hang, "labels_cot": labels_cot,
-                "matrix": [[format(value, 'f') for value in row] for row in matrix]}
-    raise HTTPException(400, "Pivot hiện chỉ hỗ trợ cube='ds'")
+    """Pivot: ma trận doanh thu hàng × cột; đảo hàng/cột cho ma trận chuyển vị."""
+    if cube != "ds":
+        raise HTTPException(400, "Pivot hiện chỉ hỗ trợ cube='ds'")
+    if hang not in PIVOT_DIMS or cot not in PIVOT_DIMS or hang == cot:
+        raise HTTPException(400, f"Cặp hang/cot không hỗ trợ: {hang}/{cot}")
+    axes = {PIVOT_DIMS[hang][0]: PIVOT_DIMS[hang][1], PIVOT_DIMS[cot][0]: PIVOT_DIMS[cot][1]}
+    rows = cube_response(sales_query, limit=None, **axes)["data"]
+    hang_field, cot_field = PIVOT_DIMS[hang][2], PIVOT_DIMS[cot][2]
+
+    def natural_key(value):
+        return (0, int(value)) if value.lstrip('-').isdigit() else (1, value)
+    labels_hang = sorted({str(r[hang_field]) for r in rows}, key=natural_key)
+    labels_cot = sorted({str(r[cot_field]) for r in rows}, key=natural_key)
+    idx_h = {v: i for i, v in enumerate(labels_hang)}
+    idx_c = {v: i for i, v in enumerate(labels_cot)}
+    matrix = [[Decimal(0) for _ in labels_cot] for _ in labels_hang]
+    for r in rows:
+        value = r["tong_doanh_thu"]
+        if value is not None:
+            matrix[idx_h[str(r[hang_field])]][idx_c[str(r[cot_field])]] += Decimal(str(value))
+    return {"labels_hang": labels_hang, "labels_cot": labels_cot,
+            "matrix": [[format(value, 'f') for value in row] for row in matrix]}
 
 
 @app.get("/api/olap/drill-across")
-def olap_drill_across(nhom: str = "nam"):
-    """Kết hợp doanh-so + ton-kho theo cùng chiều thời gian."""
-    if nhom not in ("nam", "quy", "thang"):
-        raise HTTPException(400, "nhom phải là nam | quy | thang")
-    ds = query_all(DB_OLAP, f"SELECT {', '.join(DIM_COLS_DS[nhom])}, tong_doanh_thu FROM olap_ds_{nhom}")
-    tk = query_all(DB_OLAP, f"SELECT {', '.join(DIM_COLS_TK[nhom])}, tong_ton_kho FROM olap_tk_{nhom}")
-    key = lambda r: tuple(r[c] for c in DIM_COLS_DS[nhom])
-    tk_map = {key(r): r["tong_ton_kho"] for r in tk}
-    out = []
-    for r in ds:
-        item = {c: r[c] for c in DIM_COLS_DS[nhom]}
+def olap_drill_across(nhom: str = "nam", vi_tri: str = "none"):
+    """Drill-across: ghép doanh số và tồn kho trên các chiều dùng chung (thời gian, vị trí)."""
+    if nhom not in ("none", "nam", "quy", "thang"):
+        raise HTTPException(400, "nhom phải là none | nam | quy | thang")
+    if vi_tri not in ("none", "tinh", "tp", "ch"):
+        raise HTTPException(400, "vi_tri phải là none | tinh | tp | ch")
+    ds = cube_response(sales_query, time_axis=nhom, loc_axis=vi_tri, limit=None)
+    tk = cube_response(inventory_query, time_axis=nhom, loc_axis=vi_tri, limit=None)
+    dims = ds["dim_cols"]
+    key = lambda r: tuple(r.get(c) for c in dims)
+    tk_map = {key(r): r["tong_ton_kho"] for r in tk["data"]}
+    out, seen = [], set()
+    for r in ds["data"]:
+        item = {c: r.get(c) for c in dims}
         revenue = r["tong_doanh_thu"]
         item["tong_doanh_thu"] = None if revenue is None else format(Decimal(str(revenue)), 'f')
         # Missing period != a recorded zero balance. Chart.js keeps null as a gap.
         item["tong_ton_kho"] = tk_map.get(key(r))
         out.append(item)
+        seen.add(key(r))
+    for r in tk["data"]:
+        if key(r) not in seen:
+            out.append({**{c: r.get(c) for c in dims}, "tong_doanh_thu": None, "tong_ton_kho": r["tong_ton_kho"]})
     return out
+
+
+def int_or_none(value: Optional[str]):
+    """Business keys are integers in IDB; a non-numeric key matches nothing."""
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return -1
 
 
 @app.get("/api/olap/drill-through")
 def olap_drill_through(
     kh_key: Optional[str] = None,
     mh_key: Optional[str] = None,
+    ch_key: Optional[str] = None,
     nam: Optional[int] = None,
     limit: int = Query(200, ge=1, le=2000),
     quy: Optional[int] = None,
     thang: Optional[int] = None,
+    ngay: Optional[date] = None,
     loai_kh: Optional[str] = None,
+    bang: Optional[str] = None,
+    ten_tp: Optional[str] = None,
 ):
-    """Query thẳng DW_Core.Fact_BanHang — KHÔNG qua cuboid."""
+    """Drill-through: từ một ô tổng hợp xuống từng lần cấp hàng của dòng đơn gốc trong IDB."""
     clauses, params = [], []
-    if kh_key:
-        clauses.append("f.kh_key = ?")
-        params.append(kh_key)
-    if mh_key:
-        clauses.append("f.mh_key = ?")
-        params.append(mh_key)
-    if nam:
-        clauses.append("t.nam = ?")
-        params.append(nam)
-    for column, value in (("t.quy", quy), ("t.thang", thang), ("kh.loai_kh", loai_kh)):
-        if value is not None:
+    for column, value in (("o.MaKH", int_or_none(kh_key)), ("p.MaMH", int_or_none(mh_key)),
+                          ("p.MaCuaHang", int_or_none(ch_key)), ("YEAR(o.NgayDatHang)", nam),
+                          ("DATEPART(QUARTER, o.NgayDatHang)", quy), ("MONTH(o.NgayDatHang)", thang),
+                          ("o.NgayDatHang", ngay), ("v.Bang", bang), ("v.TenThanhPho", ten_tp)):
+        if value is not None and value != "":
             clauses.append(f"{column} = ?")
             params.append(value)
+    if loai_kh:
+        clauses.append(f"{CUSTOMER_TYPE} = ?")
+        params.append(loai_kh)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     sql = f"""
         SELECT TOP {int(limit)}
-            f.ma_don, n.ngay, f.time_key, t.nam, t.quy, t.thang,
-            kh.ten AS ten_kh, mh.mo_ta AS mo_ta_mh,
-            f.so_luong, f.tong_tien
-        FROM Fact_BanHang f
-        JOIN Dim_Ngay n ON n.ngay_key = f.ngay_key
-        JOIN Dim_ThoiGian t  ON f.time_key = t.time_key
-        JOIN Dim_KhachHang kh ON f.kh_key = kh.kh_key
-        JOIN Dim_MatHang mh   ON f.mh_key = mh.mh_key
+            CAST(o.MaDon AS NVARCHAR(20)) AS ma_don, o.NgayDatHang AS ngay,
+            YEAR(o.NgayDatHang) AS nam, DATEPART(QUARTER, o.NgayDatHang) AS quy, MONTH(o.NgayDatHang) AS thang,
+            k.TenKH AS ten_kh, {CUSTOMER_TYPE} AS loai_kh, m.MoTa AS mo_ta_mh,
+            CAST(p.MaCuaHang AS NVARCHAR(20)) AS ch_key, v.TenThanhPho AS ten_tp, v.Bang AS bang,
+            p.SoLuongCap AS so_luong, p.SoLuongCap * d.GiaDat AS tong_tien
+        FROM dbo.PhanBoDonHang p
+        JOIN dbo.MatHangDuocDat d ON d.MaDon = p.MaDon AND d.MaMH = p.MaMH
+        JOIN dbo.DonDatHang o ON o.MaDon = p.MaDon
+        JOIN dbo.KhachHang k ON k.MaKH = o.MaKH
+        LEFT JOIN dbo.KhachHangDuLich dl ON dl.MaKH = k.MaKH
+        LEFT JOIN dbo.KhachHangBuuDien bd ON bd.MaKH = k.MaKH
+        JOIN dbo.MatHang m ON m.MaMH = p.MaMH
+        JOIN dbo.CuaHang c ON c.MaCuaHang = p.MaCuaHang
+        JOIN dbo.VanPhongDaiDien v ON v.MaThanhPho = c.MaThanhPho
         {where}
-        ORDER BY f.time_key DESC
+        ORDER BY o.NgayDatHang DESC, o.MaDon, p.MaMH, p.MaCuaHang
     """
-    return query_all(DB_DW, sql, params)
+    return query_all(DB_IDB, sql, params)
 
 
 # =====================================================================
@@ -393,16 +419,18 @@ def bc2(kh: str, tu_ngay: Optional[date] = None, den_ngay: Optional[date] = None
     """YC2: các đơn đặt hàng với tên KH và ngày đặt của khách đó (có thể giới hạn khoảng ngày)."""
     if tu_ngay and den_ngay and tu_ngay > den_ngay:
         raise HTTPException(400, "tu_ngay phải trước hoặc bằng den_ngay")
-    clauses, params = ["f.kh_key = ?"], [kh]
+    # Mã đơn là thông tin giao dịch, không phải chiều phân tích: fact lưu ở khóa ngày-khách-mặt hàng-cửa hàng,
+    # nên báo cáo theo từng đơn đọc tầng IDB tích hợp (cùng nguồn mà ETL dùng để nạp kho).
+    clauses, params = ["o.MaKH = ?"], [int_or_none(kh)]
     if tu_ngay:
-        clauses.append("n.ngay >= ?"); params.append(tu_ngay)
+        clauses.append("o.NgayDatHang >= ?"); params.append(tu_ngay)
     if den_ngay:
-        clauses.append("n.ngay <= ?"); params.append(den_ngay)
-    return query_all(DB_DW, f"""
-        SELECT * FROM (SELECT DISTINCT f.ma_don, kh.kh_key, kh.ten, n.ngay
-        FROM Fact_BanHang f JOIN Dim_KhachHang kh ON kh.kh_key = f.kh_key
-        JOIN Dim_Ngay n ON n.ngay_key = f.ngay_key
-        WHERE {' AND '.join(clauses)}) ordered_data ORDER BY ngay, TRY_CONVERT(BIGINT,ma_don), ma_don""", params)
+        clauses.append("o.NgayDatHang <= ?"); params.append(den_ngay)
+    return query_all(DB_IDB, f"""
+        SELECT CAST(o.MaDon AS NVARCHAR(20)) AS ma_don, CAST(k.MaKH AS NVARCHAR(20)) AS kh_key,
+               k.TenKH AS ten, o.NgayDatHang AS ngay
+        FROM dbo.DonDatHang o JOIN dbo.KhachHang k ON k.MaKH = o.MaKH
+        WHERE {' AND '.join(clauses)} ORDER BY o.NgayDatHang, o.MaDon""", params)
 
 
 @app.get("/api/bao-cao/3")
@@ -434,21 +462,21 @@ def bc5(ma_don: str):
     Mỗi dòng = một (dòng đơn, cửa hàng cấp hàng). Danh sách cửa hàng có bán được gộp vào một cột
     để không nhân bản số lượng cấp theo số cửa hàng có bán.
     """
-    return query_all(DB_DW, """
-        SELECT f.ma_don, f.mh_key, mh.mo_ta, f.so_luong, pb.ch_key AS ch_dap_ung, pb.so_luong_cap,
-               v.ten_tp AS tp_dap_ung, cb.cac_ch_co_ban
-        FROM Fact_BanHang f JOIN Dim_MatHang mh ON mh.mh_key = f.mh_key
-        LEFT JOIN Fact_PhanBo pb ON pb.ma_don = f.ma_don AND pb.mh_key = f.mh_key
-        LEFT JOIN Dim_CuaHang c ON c.ch_key = pb.ch_key LEFT JOIN Dim_VPDD v ON v.vp_key = c.vp_key
+    return query_all(DB_IDB, """
+        SELECT CAST(d.MaDon AS NVARCHAR(20)) AS ma_don, CAST(d.MaMH AS NVARCHAR(20)) AS mh_key, m.MoTa AS mo_ta,
+               d.SoLuongDat AS so_luong, CAST(p.MaCuaHang AS NVARCHAR(20)) AS ch_dap_ung, p.SoLuongCap AS so_luong_cap,
+               v.TenThanhPho AS tp_dap_ung, cb.cac_ch_co_ban
+        FROM dbo.MatHangDuocDat d JOIN dbo.MatHang m ON m.MaMH = d.MaMH
+        JOIN dbo.PhanBoDonHang p ON p.MaDon = d.MaDon AND p.MaMH = d.MaMH
+        JOIN dbo.CuaHang c ON c.MaCuaHang = p.MaCuaHang JOIN dbo.VanPhongDaiDien v ON v.MaThanhPho = c.MaThanhPho
         OUTER APPLY (
-            SELECT STRING_AGG(CONCAT(s.ch_key, N' (', s.ten_tp, N')'), N', ')
-                   WITHIN GROUP (ORDER BY TRY_CONVERT(BIGINT, s.ch_key), s.ch_key) AS cac_ch_co_ban
-            FROM (SELECT DISTINCT k.ch_key, v2.ten_tp
-                  FROM Fact_Kho k JOIN Dim_CuaHang c2 ON c2.ch_key = k.ch_key
-                  JOIN Dim_VPDD v2 ON v2.vp_key = c2.vp_key
-                  WHERE k.mh_key = f.mh_key) s
+            SELECT STRING_AGG(CONCAT(CAST(l.MaCuaHang AS NVARCHAR(20)), N' (', v2.TenThanhPho, N')'), N', ')
+                   WITHIN GROUP (ORDER BY l.MaCuaHang) AS cac_ch_co_ban
+            FROM dbo.MatHangLuuTru l JOIN dbo.CuaHang c2 ON c2.MaCuaHang = l.MaCuaHang
+            JOIN dbo.VanPhongDaiDien v2 ON v2.MaThanhPho = c2.MaThanhPho
+            WHERE l.MaMH = d.MaMH
         ) cb
-        WHERE f.ma_don = ? ORDER BY TRY_CONVERT(BIGINT,f.mh_key), f.mh_key, TRY_CONVERT(BIGINT,pb.ch_key), pb.ch_key""", [ma_don])
+        WHERE d.MaDon = ? ORDER BY d.MaMH, p.MaCuaHang""", [int_or_none(ma_don)])
 
 
 @app.get("/api/bao-cao/6")
@@ -473,13 +501,15 @@ def bc7(mh: str, tp: str, den_thang: Optional[int] = None):
 @app.get("/api/bao-cao/8")
 def bc8(ma_don: str):
     """YC8: mặt hàng, số lượng đặt, khách hàng, cửa hàng và thành phố của một đơn."""
-    return query_all(DB_DW, """
-        SELECT f.ma_don, f.mh_key, mh.mo_ta, f.so_luong, f.gia_dat, kh.ten AS khach_hang, pb.ch_key, pb.so_luong_cap, v.ten_tp
-        FROM Fact_BanHang f JOIN Dim_MatHang mh ON mh.mh_key = f.mh_key
-        JOIN Dim_KhachHang kh ON kh.kh_key = f.kh_key
-        LEFT JOIN Fact_PhanBo pb ON pb.ma_don = f.ma_don AND pb.mh_key = f.mh_key
-        LEFT JOIN Dim_CuaHang c ON c.ch_key = pb.ch_key LEFT JOIN Dim_VPDD v ON v.vp_key = c.vp_key
-        WHERE f.ma_don = ? ORDER BY TRY_CONVERT(BIGINT,f.mh_key), f.mh_key""", [ma_don])
+    return query_all(DB_IDB, """
+        SELECT CAST(d.MaDon AS NVARCHAR(20)) AS ma_don, CAST(d.MaMH AS NVARCHAR(20)) AS mh_key, m.MoTa AS mo_ta,
+               d.SoLuongDat AS so_luong, d.GiaDat AS gia_dat, k.TenKH AS khach_hang,
+               CAST(p.MaCuaHang AS NVARCHAR(20)) AS ch_key, p.SoLuongCap AS so_luong_cap, v.TenThanhPho AS ten_tp
+        FROM dbo.MatHangDuocDat d JOIN dbo.DonDatHang o ON o.MaDon = d.MaDon
+        JOIN dbo.MatHang m ON m.MaMH = d.MaMH JOIN dbo.KhachHang k ON k.MaKH = o.MaKH
+        JOIN dbo.PhanBoDonHang p ON p.MaDon = d.MaDon AND p.MaMH = d.MaMH
+        JOIN dbo.CuaHang c ON c.MaCuaHang = p.MaCuaHang JOIN dbo.VanPhongDaiDien v ON v.MaThanhPho = c.MaThanhPho
+        WHERE d.MaDon = ? ORDER BY d.MaMH, p.MaCuaHang""", [int_or_none(ma_don)])
 
 
 @app.get("/api/bao-cao/9")
@@ -504,7 +534,8 @@ def bc_meta():
         "mat_hang": query_all(DB_DW, "SELECT mh_key, mo_ta FROM Dim_MatHang ORDER BY TRY_CONVERT(BIGINT,mh_key), mh_key"),
         "cua_hang": query_all(DB_DW, "SELECT ch_key FROM Dim_CuaHang ORDER BY TRY_CONVERT(BIGINT,ch_key), ch_key"),
         "thanh_pho": query_all(DB_DW, "SELECT vp_key, ten_tp, bang FROM Dim_VPDD ORDER BY TRY_CONVERT(BIGINT,vp_key), vp_key"),
-        "don_hang": [r["ma_don"] for r in query_all(DB_DW, "SELECT ma_don FROM (SELECT DISTINCT ma_don FROM Fact_BanHang) orders ORDER BY TRY_CONVERT(BIGINT,ma_don), ma_don")],
+        # Hơn 50.000 đơn: trả khoảng mã để giao diện dùng ô nhập số thay vì danh sách chọn.
+        "don_hang": query_one(DB_IDB, "SELECT MIN(MaDon) AS min, MAX(MaDon) AS max, COUNT(*) AS so_don FROM dbo.DonDatHang"),
     }
 
 

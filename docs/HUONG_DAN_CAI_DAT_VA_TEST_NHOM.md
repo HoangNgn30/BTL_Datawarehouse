@@ -178,9 +178,9 @@ Oracle + nguồn bán hàng SQL Server
        Kiểm thử dữ liệu/API
 ```
 
-Pipeline tạo IDB tích hợp, 3 fact trong DW, 56 cuboid, metadata và index; sau đó đối chiếu dữ liệu và kiểm tra API. Các kiểm tra API trong pipeline tự chạy bằng TestClient, chưa cần khởi động Web riêng.
+Pipeline tạo IDB tích hợp, 2 fact trong DW (mỗi fact trên 100.000 dòng), 152 cuboid, metadata và index; sau đó đối chiếu dữ liệu và kiểm tra API. Các kiểm tra API trong pipeline tự chạy bằng TestClient, chưa cần khởi động Web riêng.
 
-Chỉ chuyển sang bước mở Web khi pipeline kết thúc thành công. Mốc kiểm tra của bản đã thử nghiệm là `62/62` OLAP, `12/12` đối chiếu truy vấn nghiệp vụ (9 báo cáo + 3 ca tham số thời gian), `89` API/UI và `28/28` IDB/metadata/index. Nếu phiên bản mới bổ sung test, số lượng có thể thay đổi; điều kiện là không có test thất bại hoặc traceback.
+Chỉ chuyển sang bước mở Web khi pipeline kết thúc thành công. Mốc kiểm tra của bản đã thử nghiệm là `161/161` OLAP (152 cuboid + 9 kiểm tra nguồn/fact), `12/12` đối chiếu truy vấn nghiệp vụ (9 báo cáo + 3 ca tham số thời gian), `209` API/UI và `31/31` IDB/metadata/index. Pipeline mất khoảng 10–20 phút. Nếu phiên bản mới bổ sung test, số lượng có thể thay đổi; điều kiện là không có test thất bại hoặc traceback.
 
 **Không chạy cả `run_all.ps1` rồi làm lại mục 5.** Mục 5–6 đã là một quy trình hoàn chỉnh. `run_all.ps1` là lối dựng demo SQL-only khác; không cần dùng khi làm theo luồng Oracle ở tài liệu này.
 
@@ -293,7 +293,7 @@ git log -1 --oneline
 | Oracle báo tên container/cổng 1522 đã được dùng | Kiểm tra `docker ps -a` và tiến trình đang dùng cổng. Gửi thông tin cho nhóm trưởng trước khi đổi cấu hình hoặc xóa container. |
 | Bootstrap báo bảng Oracle đã tồn tại | Nếu đã cài xong trước đó, bỏ `-BootstrapDemo`, chỉ khởi động Oracle rồi chạy pipeline. Nếu cài dở, gửi log để xác định trạng thái trước khi tiếp tục. |
 | Nguồn SQL đã tồn tại / bảng đã tồn tại | Không chạy lại bước tạo nguồn trên bản đã cài. Xác định đúng instance và bước đã hoàn thành; không tự bật ResetDemo. |
-| `Invalid object name ...TonKhoThang`, thiếu `IDB_TichHop` hoặc `Fact_PhanBo` | Có thể chưa dựng đủ bước hoặc đang kết nối nhầm instance. Kiểm tra mục 4, sau đó xác định bước 5–6 nào chưa thành công. Không chỉ tạo cuboid trên schema cũ. |
+| `Invalid object name ...TonKhoThang`, thiếu `IDB_TichHop` hoặc cột `ch_key` trong `Fact_BanHang` | Có thể chưa dựng đủ bước hoặc đang kết nối nhầm instance. Kiểm tra mục 4, sau đó xác định bước 5–6 nào chưa thành công. Không chỉ tạo cuboid trên schema cũ. |
 | Có Web nhưng lỗi tải dữ liệu | Kiểm tra `.env`, instance SQL, log terminal Web và kết quả pipeline; sau khi sửa `.env` phải khởi động lại Web. |
 | `WinError 10048` / cổng 8017 đang dùng | Có thể Web đã chạy. Thử mở URL trước; chỉ dừng tiến trình Web của chính dự án. Không dừng ngẫu nhiên tiến trình khác. |
 | Query/pipeline chạy rất chậm | SQL có thể chờ cấp RAM (`RESOURCE_SEMAPHORE`). Đóng bớt ứng dụng nặng, không chạy nhiều pipeline/test cùng lúc. Gửi thời gian chờ và log nếu không tiến triển. |

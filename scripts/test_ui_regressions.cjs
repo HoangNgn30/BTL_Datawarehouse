@@ -10,7 +10,7 @@ async function responseOrder(cube){
   for(const field of ['nam','quy','thang','loai-kh','mh','tinh','cuboid','lattice','hint'])nodes[`${cube}-${field}`]={value:'',textContent:''};
   nodes[`tb-${cube}`]={querySelectorAll:()=>[]};
   let renders=[],pending=[],alerts=[];
-  const ctx={URLSearchParams,salesRequestId:0,inventoryRequestId:0,axisState:{[cube]:{time:'nam',mh:'none',kh:'none',loc:'none'}},el:id=>nodes[id],api:url=>new Promise((resolve,reject)=>pending.push({url,resolve,reject})),HINTS:{1:'year'},COL_LABEL:{nam:{key:'nam',label:'Year'}},fmtNum:String,fmtMoney:String,buildTable:(_,rows)=>renders.push(rows[0].nam),chart:()=>{},PALETTE:['purple'],alert:value=>alerts.push(value)};
+  const ctx={URLSearchParams,salesRequestId:0,inventoryRequestId:0,axisState:{[cube]:{time:'nam',mh:'none',kh:'none',loc:'none'}},el:id=>nodes[id],api:url=>new Promise((resolve,reject)=>pending.push({url,resolve,reject})),HINTS:{1:'year'},rowCountNote:()=>'',chartRows:res=>res.data,COL_LABEL:{nam:{key:'nam',label:'Year'}},fmtNum:String,fmtMoney:String,buildTable:(_,rows)=>renders.push(rows[0].nam),chart:()=>{},PALETTE:['purple'],alert:value=>alerts.push(value)};
   vm.runInNewContext(source.slice(start,end),ctx);
   const response=year=>({cuboid:`olap_${cube}_nam`,lattice:1,dim_cols:['nam'],data:[{nam:year,tong_so_luong:1,tong_doanh_thu:'100.00',tong_ton_kho:1}]});
   nodes[`${cube}-nam`].value='2022';const old=ctx[name]();

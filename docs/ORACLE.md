@@ -1,4 +1,4 @@
-﻿# Oracle + SQL Server: triển khai và trích xuất nguồn khách hàng
+# Oracle + SQL Server: triển khai và trích xuất nguồn khách hàng
 
 ## Kiến trúc thực thi
 
@@ -6,7 +6,8 @@
 - **SQL Server IDB_BanHang**: văn phòng, cửa hàng, sản phẩm, đơn/dòng đơn, phân bổ, ledger và snapshot.
 - **SQL Server STG_OracleVPDD**: landing snapshot của Oracle, có ExtractAudit ghi nguồn/phiên bản, UTC, số dòng, SHA256.
 - **DW_Core**: ETL khách hàng từ STG_OracleVPDD, bán hàng và tồn từ SQL Server.
-- **OLAP_QuanLyBanHang**: 56 cuboid, API và báo cáo.
+- **IDB_TichHop**: CSDL tích hợp hai nguồn; DW nạp từ đây.
+- **OLAP_QuanLyBanHang**: 152 cuboid, API và báo cáo.
 
 Oracle là nguồn khách hàng có thẩm quyền khi chạy pipeline Oracle. CSDL IDB_VPDD trên SQL Server chỉ cung cấp bộ dữ liệu demo cho lần bootstrap đầu tiên và còn được giữ cho chế độ demo SQL-only. Không đọc IDB_VPDD làm nguồn khách hàng trong pipeline Oracle.
 
@@ -21,7 +22,7 @@ Từ thư mục dự án:
 .\sql\run_oracle_pipeline.ps1 -Server '.\MSSQLSERVER01' -Trusted
 ```
 
-Bootstrap chỉ tạo ba bảng Oracle khi chưa có bảng nguồn nào; không ghi đè khi bảng đã tồn tại. Đây là bước chuyển bộ dữ liệu mẫu ban đầu sang Oracle, không phải trích xuất giả. Các lần chạy sau không seed lại nguồn.
+Bootstrap chỉ tạo ba bảng Oracle khi chưa có bảng nguồn nào; không ghi đè khi bảng đã tồn tại. Khi bộ demo SQL đã được tạo lại với quy mô mới (ví dụ 5.000 khách thay cho 300), Oracle vẫn giữ bộ khách cũ và bước extract sẽ báo khóa khách trong đơn không tồn tại. Khi đó chạy `python scripts/oracle_sync.py reset-demo`: lệnh xóa dữ liệu ba bảng khách Oracle (không xóa bảng) rồi nạp lại từ IDB_VPDD. Chỉ dùng với schema demo KDL_VPDD. Đây là bước chuyển bộ dữ liệu mẫu ban đầu sang Oracle, không phải trích xuất giả. Các lần chạy sau không seed lại nguồn.
 
 ## Những lần chạy tiếp theo
 

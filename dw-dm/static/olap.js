@@ -83,7 +83,10 @@ async function loadMetadata() {
     el("ds-mh").appendChild(mkOption(m.mh_key, m.mo_ta));
     el("tk-mh").appendChild(mkOption(m.mh_key, m.mo_ta));
   });
-  tinh.forEach(v => el("tk-tinh").appendChild(mkOption(v)));
+  tinh.forEach(v => {
+    el("tk-tinh").appendChild(mkOption(v));
+    el("ds-tinh").appendChild(mkOption(v));
+  });
   el("kpi-namso").textContent = `${Math.min(...nam)} – ${Math.max(...nam)}`;
 }
 
@@ -148,15 +151,17 @@ function buildTable(tableEl, rows, columns) {
 
 // ============== Axis state (Sales + Inventory) ==============
 const axisState = {
-  ds: { time: "none", mh: "none", kh: "none" },
+  ds: { time: "none", mh: "none", kh: "none", loc: "none" },
   tk: { time: "none", mh: "none", loc: "none" },
 };
+const CHART_MAX_BARS = 60;
 
 // Map axis value → cột hiển thị bảng
 const COL_LABEL = {
   nam: { key: "nam", label: "Năm" },
   quy: { key: "quy", label: "Quý" },
   thang: { key: "thang", label: "Tháng" },
+  ngay: { key: "ngay", label: "Ngày" },
   mh_key: { key: "mh_key", label: "Mã mặt hàng" },
   mo_ta: { key: "mo_ta", label: "Mô tả" },
   kich_co: { key: "kich_co", label: "Kích cỡ" },
@@ -175,6 +180,7 @@ function previewDs(s) {
   if (s.time !== "none") parts.push(s.time);
   if (s.mh === "mh") parts.push("mh");
   if (s.kh !== "none") parts.push(s.kh);
+  if (s.loc !== "none") parts.push(s.loc);
   const lattice = parts.length;
   const table = parts.length === 0 ? "olap_ds_all" : "olap_ds_" + parts.join("_");
   return { table, lattice };
@@ -193,30 +199,36 @@ const HINTS = {
   0: "Tổng hợp toàn bộ dữ liệu, không phân nhóm.",
   1: "Phân nhóm theo một chiều dữ liệu.",
   2: "Phân nhóm theo hai chiều dữ liệu kết hợp.",
-  3: "Phân nhóm theo cả ba chiều dữ liệu.",
+  3: "Phân nhóm theo ba chiều dữ liệu kết hợp.",
+  4: "Phân nhóm theo cả bốn chiều: thời gian, mặt hàng, khách hàng, vị trí.",
 };
 
-// Tính trước cột dim_cols mà cuboid sẽ có (mirror backend) → dùng show/hide filter
+// Tính trước cột dim_cols mà cuboid sẽ có (mirror backend cube_schema.py) → dùng show/hide filter
+const TIME_COLS = { none: [], nam: ["nam"], quy: ["nam", "quy"], thang: ["nam", "quy", "thang"], ngay: ["nam", "quy", "thang", "ngay"] };
+const LOC_COLS = { none: [], tinh: ["bang"], tp: ["bang", "ten_tp"], ch: ["bang", "ten_tp", "ch_key"] };
 function predictDsCols(s) {
-  const cols = [];
-  if (s.time === "nam") cols.push("nam");
-  else if (s.time === "quy") cols.push("nam", "quy");
-  else if (s.time === "thang") cols.push("nam", "quy", "thang");
+  const cols = [...TIME_COLS[s.time]];
   if (s.mh === "mh") cols.push("mh_key", "mo_ta");
   if (s.kh === "loai_kh") cols.push("loai_kh");
   else if (s.kh === "kh") cols.push("kh_key", "ten", "loai_kh");
+  cols.push(...LOC_COLS[s.loc]);
   return cols;
 }
 function predictTkCols(s) {
-  const cols = [];
-  if (s.time === "nam") cols.push("nam");
-  else if (s.time === "quy") cols.push("nam", "quy");
-  else if (s.time === "thang") cols.push("nam", "quy", "thang");
+  const cols = [...TIME_COLS[s.time]];
   if (s.mh === "mh") cols.push("mh_key", "mo_ta");
-  if (s.loc === "tinh") cols.push("bang");
-  else if (s.loc === "tp") cols.push("bang", "ten_tp");
-  else if (s.loc === "ch") cols.push("ch_key");
+  cols.push(...LOC_COLS[s.loc]);
   return cols;
+}
+// Large cuboids are paged by the API; tell the user how many groups exist in total.
+function rowCountNote(res) {
+  if (!res.lattice) return "";
+  return res.bi_cat_bot
+    ? ` Hiển thị ${fmtNum(res.data.length)} / ${fmtNum(res.tong_so_dong)} dòng; thêm bộ lọc để thu hẹp.`
+    : ` ${fmtNum(res.tong_so_dong)} dòng.`;
+}
+function chartRows(res) {
+  return res.data.slice(0, CHART_MAX_BARS);
 }
 
 // Show/hide filter fields theo cột thực có của cuboid hiện tại
@@ -263,13 +275,14 @@ async function runDoanhSo() {
   const ticket = ++salesRequestId;
   const s = axisState.ds;
   const params = new URLSearchParams({
-    time_axis: s.time, mh_axis: s.mh, kh_axis: s.kh,
+    time_axis: s.time, mh_axis: s.mh, kh_axis: s.kh, loc_axis: s.loc ?? "none",
   });
   const ln = el("ds-nam").value; if (ln) params.set("loc_nam", ln);
   const lq = el("ds-quy").value; if (lq) params.set("loc_quy", lq);
   const lt = el("ds-thang").value; if (lt) params.set("loc_thang", lt);
   const lk = el("ds-loai-kh").value; if (lk) params.set("loc_loai_kh", lk);
   const lm = el("ds-mh").value; if (lm) params.set("loc_mh", lm);
+  const lb = el("ds-tinh")?.value; if (lb) params.set("loc_bang", lb);
 
   let res;
   try {
@@ -282,7 +295,7 @@ async function runDoanhSo() {
   if (ticket !== salesRequestId) return;
   el("ds-cuboid").textContent = res.cuboid;
   el("ds-lattice").textContent = res.lattice + "D";
-  el("ds-hint").textContent = HINTS[res.lattice];
+  el("ds-hint").textContent = HINTS[res.lattice] + rowCountNote(res);
 
   const dimCols = res.dim_cols.map(k => COL_LABEL[k] || { key: k, label: k });
   const cols = [
@@ -292,12 +305,13 @@ async function runDoanhSo() {
   ];
   buildTable(el("tb-ds"), res.data, cols);
 
-  // Chart: nếu 0D, hiện 1 cột tổng; nếu nhiều dim, ghép label
+  // Chart: nếu 0D, hiện 1 cột tổng; nếu nhiều dim, ghép label (tối đa CHART_MAX_BARS nhóm đầu)
+  const shown = chartRows(res);
   const labels = res.lattice === 0
     ? ["Tổng"]
-    : res.data.map(r => dimCols.map(c => r[c.key]).join(" / "));
+    : shown.map(r => dimCols.filter(c => c.key !== "mo_ta" && c.key !== "ten").map(c => r[c.key]).join(" / "));
   chart("ch-ds", "bar", labels,
-    [{ label: "Doanh thu", data: res.data.map(r => r.tong_doanh_thu), backgroundColor: PALETTE[0] }],
+    [{ label: "Doanh thu", data: shown.map(r => r.tong_doanh_thu), backgroundColor: PALETTE[0] }],
     { indexAxis: labels.length > 12 ? "y" : "x" });
 
   el("tb-ds").querySelectorAll("tbody tr").forEach(tr => {
@@ -305,10 +319,11 @@ async function runDoanhSo() {
       if (!tr.dataset.row) return;
       const r = JSON.parse(tr.dataset.row);
       const p = new URLSearchParams();
-      if (r.kh_key) p.set("kh_key", r.kh_key);
-      if (r.mh_key) p.set("mh_key", r.mh_key);
-      for (const [field, input] of [["nam", "ds-nam"], ["quy", "ds-quy"], ["thang", "ds-thang"], ["loai_kh", "ds-loai-kh"], ["mh_key", "ds-mh"]]) {
-        const value = r[field] ?? el(input).value;
+      for (const field of ["kh_key", "mh_key", "ch_key", "ten_tp", "ngay"]) {
+        if (r[field] != null && r[field] !== "") p.set(field, r[field]);
+      }
+      for (const [field, input] of [["nam", "ds-nam"], ["quy", "ds-quy"], ["thang", "ds-thang"], ["loai_kh", "ds-loai-kh"], ["mh_key", "ds-mh"], ["bang", "ds-tinh"]]) {
+        const value = r[field] ?? el(input)?.value;
         if (value !== "" && value != null) p.set(field, value);
       }
       openDrillThrough(p);
@@ -319,8 +334,8 @@ async function runDoanhSo() {
 el("ds-run").addEventListener("click", runDoanhSo);
 el("ds-reset").addEventListener("click", () => {
   el("ds-nam").value = ""; el("ds-quy").value = ""; el("ds-thang").value = "";
-  el("ds-loai-kh").value = ""; el("ds-mh").value = "";
-  ["time", "mh", "kh"].forEach(ax => {
+  el("ds-loai-kh").value = ""; el("ds-mh").value = ""; el("ds-tinh").value = "";
+  ["time", "mh", "kh", "loc"].forEach(ax => {
     axisState.ds[ax] = "none";
     document.querySelectorAll(`.seg[data-cube="ds"][data-axis="${ax}"] .seg-item`).forEach(b => {
       b.classList.toggle("active", b.dataset.val === "none");
@@ -355,17 +370,18 @@ async function runTonKho() {
   if (ticket !== inventoryRequestId) return;
   el("tk-cuboid").textContent = res.cuboid;
   el("tk-lattice").textContent = res.lattice + "D";
-  el("tk-hint").textContent = HINTS[res.lattice];
+  el("tk-hint").textContent = HINTS[res.lattice] + rowCountNote(res);
 
   const dimCols = res.dim_cols.map(k => COL_LABEL[k] || { key: k, label: k });
   const cols = [...dimCols, { key: "tong_ton_kho", label: "Tồn kho", fmt: fmtNum }];
   buildTable(el("tb-tk"), res.data, cols);
 
+  const shown = chartRows(res);
   const labels = res.lattice === 0
     ? ["Tổng"]
-    : res.data.map(r => dimCols.map(c => r[c.key]).join(" / "));
+    : shown.map(r => dimCols.filter(c => c.key !== "mo_ta").map(c => r[c.key]).join(" / "));
   chart("ch-tk", "bar", labels,
-    [{ label: "Tồn kho", data: res.data.map(r => r.tong_ton_kho), backgroundColor: PALETTE[0] }],
+    [{ label: "Tồn kho", data: shown.map(r => r.tong_ton_kho), backgroundColor: PALETTE[0] }],
     { indexAxis: labels.length > 12 ? "y" : "x" });
 }
 
@@ -401,33 +417,46 @@ function tableFromArray(rows) {
 function syncOlapControls() {
   const sliceCube = document.querySelector('[data-sl="cube"]');
   const sliceAxis = document.querySelector('[data-sl="chieu"]');
-  const allowed = sliceCube.value === 'ds' ? ['nam','loai_kh','mh'] : ['nam','bang','mh'];
+  const allowed = sliceCube.value === 'ds' ? ['nam','loai_kh','mh','bang'] : ['nam','bang','mh'];
   for (const option of sliceAxis.options) {
     option.hidden = option.disabled = !allowed.includes(option.value);
   }
   if (!allowed.includes(sliceAxis.value)) sliceAxis.value = 'nam';
+  // Pivot: any two different dimensions of the sales cube.
   const row = document.querySelector('[data-pv="hang"]');
   const column = document.querySelector('[data-pv="cot"]');
-  const columns = row.value === 'nam' ? ['loai_kh','mh'] : ['nam'];
   for (const option of column.options) {
-    option.hidden = option.disabled = !columns.includes(option.value);
+    option.hidden = option.disabled = option.value === row.value;
   }
-  if (!columns.includes(column.value)) column.value = columns[0];
+  if (column.value === row.value) column.value = [...column.options].find(o => !o.disabled).value;
+  // Roll-up: inventory snapshots are monthly, so day → month only exists for sales.
+  const rollCube = document.querySelector('[data-rl="cube"]');
+  const rollStep = document.querySelector('[data-rl="buoc"]');
+  for (const option of rollStep.options) {
+    option.hidden = option.disabled = rollCube.value === 'tk' && option.value.startsWith('ngay');
+  }
+  if (rollStep.selectedOptions[0]?.disabled) rollStep.value = 'thang:quy';
+  const drillCube = document.querySelector('[data-dd="cube"]');
+  const drillTo = document.querySelector('[data-dd="xuong"]');
+  for (const option of drillTo.options) {
+    option.hidden = option.disabled = drillCube.value === 'tk' && option.value === 'ngay';
+  }
+  if (drillTo.selectedOptions[0]?.disabled) drillTo.value = 'thang';
   const diceCube = document.querySelector('[data-di="cube"]');
   const customerType = document.querySelector('[data-di="loai_kh"]');
   customerType.disabled = diceCube.value !== 'ds';
   customerType.closest('.field').hidden = customerType.disabled;
   window.upgradeSelects?.();
 }
-for (const selector of ['[data-sl="cube"]','[data-pv="hang"]','[data-di="cube"]']) {
+for (const selector of ['[data-sl="cube"]','[data-pv="hang"]','[data-di="cube"]','[data-rl="cube"]','[data-dd="cube"]']) {
   document.querySelector(selector).addEventListener('change', syncOlapControls);
 }
 syncOlapControls();
 
 async function runRollup() {
   const cube = document.querySelector('[data-rl="cube"]').value;
-  const lvl = document.querySelector('[data-rl="len"]').value;
-  const res = await api(`/api/olap/roll-up?cube=${cube}&tu=thang&len=${lvl}`);
+  const [tu, len] = document.querySelector('[data-rl="buoc"]').value.split(":");
+  const res = await api(`/api/olap/roll-up?cube=${cube}&tu=${tu}&len=${len}`);
   el("r-rollup").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
 
@@ -435,8 +464,10 @@ async function runDrilldown() {
   const cube = document.querySelector('[data-dd="cube"]').value;
   const xuong = document.querySelector('[data-dd="xuong"]').value;
   const nam = document.querySelector('[data-dd="nam"]').value;
+  const bang = document.querySelector('[data-dd="bang"]').value.trim();
   let url = `/api/olap/drill-down?cube=${cube}&xuong=${xuong}`;
   if (nam) url += `&loc_nam=${nam}`;
+  if (bang) url += `&loc_bang=${encodeURIComponent(bang)}`;
   const res = await api(url);
   el("r-drilldown").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
 }
@@ -455,8 +486,10 @@ async function runDice() {
   const nhom = document.querySelector('[data-di="nhom"]').value;
   const nam = document.querySelector('[data-di="nam"]').value;
   const lk = document.querySelector('[data-di="loai_kh"]').value;
+  const bang = document.querySelector('[data-di="bang"]').value.trim();
   let url = `/api/olap/dice?cube=${cube}&nhom=${nhom}`;
   if (nam) url += `&loc_nam=${nam}`;
+  if (bang) url += `&loc_bang=${encodeURIComponent(bang)}`;
   if (cube === "ds" && lk) url += `&loc_loai_kh=${encodeURIComponent(lk)}`;
   const res = await api(url);
   el("r-dice").innerHTML = `<span class="cuboid-tag">${escapeHTML(res.cuboid)}</span>` + tableFromArray(res.data);
@@ -467,7 +500,8 @@ async function runPivot() {
   const cot = document.querySelector('[data-pv="cot"]').value;
   if (hang === cot) return alert("Hàng và cột phải khác nhau");
   const res = await api(`/api/olap/pivot?cube=ds&hang=${hang}&cot=${cot}`);
-  let html = "<table><thead><tr><th>" + ({nam:"Năm",loai_kh:"Loại khách hàng",mh:"Mặt hàng"}[hang]) + " / " + ({nam:"Năm",loai_kh:"Loại khách hàng",mh:"Mặt hàng"}[cot]) + "</th>";
+  const names = {nam:"Năm",loai_kh:"Loại khách hàng",mh:"Mặt hàng",bang:"Bang"};
+  let html = "<table><thead><tr><th>" + names[hang] + " / " + names[cot] + "</th>";
   res.labels_cot.forEach(c => html += `<th>${escapeHTML(c)}</th>`);
   html += "</tr></thead><tbody>";
   res.labels_hang.forEach((h, i) => {
@@ -479,13 +513,14 @@ async function runPivot() {
 
 async function runDrillAcross() {
   const nhom = document.querySelector('[data-da="nhom"]').value;
-  const data = await api(`/api/olap/drill-across?nhom=${nhom}`);
+  const viTri = document.querySelector('[data-da="vi_tri"]').value;
+  const data = await api(`/api/olap/drill-across?nhom=${nhom}&vi_tri=${viTri}`);
   el("r-drillacross").innerHTML = tableFromArray(data);
 }
 
 async function runDrillThrough() {
   const params = new URLSearchParams();
-  ["kh_key", "mh_key", "nam"].forEach(k => {
+  ["kh_key", "mh_key", "ch_key", "nam"].forEach(k => {
     const v = document.querySelector(`[data-dt="${k}"]`).value;
     if (v) params.set(k, v);
   });

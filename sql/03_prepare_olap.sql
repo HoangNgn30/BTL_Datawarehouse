@@ -1,4 +1,4 @@
-/* 03 - Chuan bi CSDL OLAP: tao neu chua co va xoa moi bang olap_* (de chay lai 56 cuboid) */
+/* 03 - Chuan bi CSDL OLAP: tao neu chua co va xoa moi bang olap_* (de chay lai toan bo cuboid) */
 USE master;
 GO
 IF DB_ID('OLAP_QuanLyBanHang') IS NULL CREATE DATABASE OLAP_QuanLyBanHang;

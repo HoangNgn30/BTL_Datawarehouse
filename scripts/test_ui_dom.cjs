@@ -1,4 +1,4 @@
-﻿// DOM integration checks; not a substitute for visual/browser QA.
+// DOM integration checks; not a substitute for visual/browser QA.
 const {JSDOM,ResourceLoader,VirtualConsole}=require('../ui/react-app/node_modules/jsdom');
 const assert=require('node:assert/strict');
 const base=process.env.UI_BASE_URL||'http://127.0.0.1:8017';
@@ -7,11 +7,15 @@ async function waitFor(fn,message){const end=Date.now()+90000;while(Date.now()<e
 async function load(path){const errors=[];const vc=new VirtualConsole();vc.on('jsdomError',e=>{if(!e.message.includes('HTMLCanvasElement.prototype.getContext'))errors.push(e.message);});const html=await (await fetch(base+path,{signal:AbortSignal.timeout(30000)})).text();const dom=new JSDOM(html,{url:base+path,resources:new Assets(),runScripts:'dangerously',pretendToBeVisual:true,virtualConsole:vc,beforeParse(w){w.fetch=(url,options)=>fetch(new URL(url,base),options);w.HTMLCanvasElement.prototype.getContext=()=>({});}});return {dom,w:dom.window,d:dom.window.document,errors};}
 (async()=>{
 console.log('Loading overview DOM');
+const json=async path=>(await fetch(base+path,{signal:AbortSignal.timeout(60000)})).json();
+const total=await json('/api/doanh-so/tong');
+const report2=(await json('/api/bao-cao/2?kh=1')).length;
+const report9=(await json('/api/bao-cao/9?loai=ca_hai')).length;
 const a=await load('/');
 console.log('Waiting for overview data');
 try{
  await waitFor(()=>a.d.querySelector('#tb-ds tbody tr[data-row]'),'Sales boot did not load');
- assert.equal(a.d.querySelector('#kpi-soluong').textContent,'16.500');
+ assert.equal(a.d.querySelector('#kpi-soluong').textContent,a.w.formatNumber(total.tong_so_luong));
  assert.equal(a.d.querySelectorAll('#tb-overview tbody tr').length,3);
  a.d.querySelector('[data-tab=sales]').click();assert(a.d.querySelector('#tab-sales').classList.contains('active'));
  a.d.querySelector('#ds-nam').parentElement.querySelector('.custom-select').click();
@@ -27,10 +31,11 @@ try{
  change('[data-sl="cube"]','tk');
  assert.deepEqual([...a.d.querySelector('[data-sl="chieu"]').options].filter(o=>!o.disabled).map(o=>o.value),['nam','mh','bang']);
  change('[data-sl="cube"]','ds');
- assert(a.d.querySelector('[data-sl="chieu"] option[value="bang"]').disabled);
+ assert(!a.d.querySelector('[data-sl="chieu"] option[value="bang"]').disabled);
  change('[data-pv="hang"]','mh');
- assert.equal(a.d.querySelector('[data-pv="cot"]').value,'nam');
- assert(a.d.querySelector('[data-pv="cot"] option[value="loai_kh"]').disabled);
+ assert.notEqual(a.d.querySelector('[data-pv="cot"]').value,'mh');
+ assert(a.d.querySelector('[data-pv="cot"] option[value="mh"]').disabled);
+ assert(!a.d.querySelector('[data-pv="cot"] option[value="bang"]').disabled);
  change('[data-di="cube"]','tk');assert(a.d.querySelector('[data-di="loai_kh"]').disabled);assert.equal(a.w.getComputedStyle(a.d.querySelector('[data-di="loai_kh"]').closest('.field')).display,'none');
  assert.deepEqual(a.errors,[]);console.log('[OK] Overview values/table, sales filter, custom select, drill-through and shell events');
 }finally{a.w.close();}
@@ -39,13 +44,13 @@ const b=await load('/bao-cao');
 try{
  await waitFor(()=>b.d.querySelector('#report-form'),'Report metadata did not load');
  b.d.querySelector('#report-form button[type=submit]').click();
- await waitFor(()=>b.d.querySelectorAll('#report-result tbody tr').length===5,'Report 2 failed');
+ await waitFor(()=>b.d.querySelectorAll('#report-result tbody tr').length===report2,'Report 2 failed');
  b.d.querySelector('[data-report="9"]').click();
  b.d.querySelector('#p9_loai').parentElement.querySelector('.custom-select').click();
  [...b.d.querySelectorAll('.select-option')].find(x=>x.textContent==='Thuộc cả hai loại').click();
  b.d.querySelector('#report-form button[type=submit]').click();
- await waitFor(()=>b.d.querySelectorAll('#report-result tbody tr').length===50,'Report 9 failed');
- assert.deepEqual(b.errors,[]);console.log('[OK] Report navigation, parameters, report 2 (5 rows), report 9 (50 rows)');
+ await waitFor(()=>b.d.querySelectorAll('#report-result tbody tr').length===report9,'Report 9 failed');
+ assert.deepEqual(b.errors,[]);console.log(`[OK] Report navigation, parameters, report 2 (${report2} rows), report 9 (${report9} rows)`);
 }finally{b.w.close();}
 console.log('UI DOM integration passed (charts stubbed; no geometry assertions)');
 })().catch(e=>{console.error(e);process.exitCode=1;});

@@ -14,6 +14,7 @@
             <button class="seg-item" data-val="nam">Năm</button>
             <button class="seg-item" data-val="quy">Quý</button>
             <button class="seg-item" data-val="thang">Tháng</button>
+            <button class="seg-item" data-val="ngay">Ngày</button>
           </div>
         </div>
 
@@ -31,6 +32,16 @@
             <button class="seg-item active" data-val="none">Tổng hợp</button>
             <button class="seg-item" data-val="loai_kh">Loại khách hàng</button>
             <button class="seg-item" data-val="kh">Khách hàng</button>
+          </div>
+        </div>
+
+        <div class="axis-row">
+          <span class="axis-label"> Vị trí bán</span>
+          <div class="seg" data-axis="loc" data-cube="ds">
+            <button class="seg-item active" data-val="none">Tổng hợp</button>
+            <button class="seg-item" data-val="tinh">Bang</button>
+            <button class="seg-item" data-val="tp">Thành phố</button>
+            <button class="seg-item" data-val="ch">Cửa hàng</button>
           </div>
         </div>
 
@@ -63,6 +74,9 @@
         </div>
         <div class="field" data-need="loai_kh">
           <label for="ds-loai-kh">Loại khách hàng</label><select id="ds-loai-kh"><option value="">— Tất cả —</option></select>
+        </div>
+        <div class="field" data-need="bang">
+          <label for="ds-tinh">Bang</label><select id="ds-tinh"><option value="">— Tất cả —</option></select>
         </div>
         <div class="field" data-need="mh_key">
           <label for="ds-mh">Mặt hàng</label><select id="ds-mh"><option value="">— Tất cả —</option></select>
@@ -181,11 +195,11 @@
 
         <div class="olap-card">
           <h3>Cuộn lên (Roll-up)</h3>
-          <p class="desc">Gộp doanh số từ tháng → quý → năm</p>
+          <p class="desc">Gộp lên cấp cao hơn: ngày → tháng → quý → năm; cửa hàng → thành phố → bang</p>
           <div class="form-row">
             <div class="field"><label for="olap-field-1">Khối dữ liệu</label><select id="olap-field-1" data-rl="cube"><option value="ds">Doanh số</option><option value="tk">Tồn kho</option></select>
             </div>
-            <div class="field"><label for="olap-field-2">Tổng hợp lên</label><select id="olap-field-2" data-rl="len"><option value="quy">Quý</option><option value="nam">Năm</option></select>
+            <div class="field"><label for="olap-field-2">Bước tổng hợp</label><select id="olap-field-2" data-rl="buoc"><option value="thang:quy">Tháng → Quý</option><option value="quy:nam">Quý → Năm</option><option value="ngay:thang">Ngày → Tháng</option><option value="ch:tp">Cửa hàng → Thành phố</option><option value="tp:tinh">Thành phố → Bang</option></select>
             </div>
             <button class="ghost" onclick="runRollup()">Thực hiện</button>
           </div>
@@ -194,13 +208,15 @@
 
         <div class="olap-card">
           <h3>Khoan sâu (Drill-down)</h3>
-          <p class="desc">Xem chi tiết từ năm xuống quý / tháng</p>
+          <p class="desc">Xem chi tiết hơn trong phạm vi đã chọn: năm → quý → tháng → ngày; bang → thành phố → cửa hàng</p>
           <div class="form-row">
             <div class="field"><label for="olap-field-3">Khối dữ liệu</label><select id="olap-field-3" data-dd="cube"><option value="ds">Doanh số</option><option value="tk">Tồn kho</option></select>
             </div>
-            <div class="field"><label for="olap-field-4">Chi tiết đến</label><select id="olap-field-4" data-dd="xuong"><option value="quy">Quý</option><option value="thang">Tháng</option></select>
+            <div class="field"><label for="olap-field-4">Chi tiết đến</label><select id="olap-field-4" data-dd="xuong"><option value="quy">Quý</option><option value="thang">Tháng</option><option value="ngay">Ngày</option><option value="tp">Thành phố</option><option value="ch">Cửa hàng</option></select>
             </div>
-            <div class="field"><label for="olap-field-5">Lọc theo năm</label><input id="olap-field-5" type="number" data-dd="nam" placeholder="2022" />
+            <div class="field"><label for="olap-field-5">Trong năm</label><input id="olap-field-5" type="number" data-dd="nam" placeholder="2022" />
+            </div>
+            <div class="field"><label for="olap-field-5b">Trong bang</label><input id="olap-field-5b" type="text" data-dd="bang" placeholder="Texas" />
             </div>
             <button class="ghost" onclick="runDrilldown()">Thực hiện</button>
           </div>
@@ -233,9 +249,10 @@
           <div class="form-row">
             <div class="field"><label for="olap-field-9">Khối dữ liệu</label><select id="olap-field-9" data-di="cube"><option value="ds">Doanh số</option><option value="tk">Tồn kho</option></select>
             </div>
-            <div class="field"><label for="olap-field-10">Nhóm</label><select id="olap-field-10" data-di="nhom"><option value="nam">Năm</option><option value="quy">Quý</option></select>
+            <div class="field"><label for="olap-field-10">Nhóm</label><select id="olap-field-10" data-di="nhom"><option value="nam">Năm</option><option value="quy">Quý</option><option value="tp">Thành phố</option><option value="ch">Cửa hàng</option></select>
             </div>
             <div class="field"><label for="olap-field-11">Năm</label><input id="olap-field-11" type="number" data-di="nam" placeholder="2022" /></div>
+            <div class="field"><label for="olap-field-11b">Bang</label><input id="olap-field-11b" type="text" data-di="bang" placeholder="California" /></div>
             <div class="field"><label for="olap-field-12">Loại khách hàng</label><input id="olap-field-12" type="text" data-di="loai_kh" placeholder="DuLich" /></div>
             <button class="ghost" onclick="runDice()">Thực hiện</button>
           </div>
@@ -244,11 +261,11 @@
 
         <div class="olap-card">
           <h3>Xoay bảng (Pivot)</h3>
-          <p class="desc">Doanh số theo năm và loại khách hàng hoặc mặt hàng.</p>
+          <p class="desc">Doanh thu theo hai chiều bất kỳ; đổi hàng và cột để xoay bảng.</p>
           <div class="form-row">
-            <div class="field"><label for="olap-field-13">Hàng</label><select id="olap-field-13" data-pv="hang"><option value="nam">Năm</option><option value="loai_kh">Loại khách hàng</option><option value="mh">Mặt hàng</option></select>
+            <div class="field"><label for="olap-field-13">Hàng</label><select id="olap-field-13" data-pv="hang"><option value="nam">Năm</option><option value="loai_kh">Loại khách hàng</option><option value="mh">Mặt hàng</option><option value="bang">Bang</option></select>
             </div>
-            <div class="field"><label for="olap-field-14">Cột</label><select id="olap-field-14" data-pv="cot"><option value="loai_kh">Loại khách hàng</option><option value="nam">Năm</option><option value="mh">Mặt hàng</option></select>
+            <div class="field"><label for="olap-field-14">Cột</label><select id="olap-field-14" data-pv="cot"><option value="loai_kh">Loại khách hàng</option><option value="nam">Năm</option><option value="mh">Mặt hàng</option><option value="bang">Bang</option></select>
             </div>
             <button class="ghost" onclick="runPivot()">Thực hiện</button>
           </div>
@@ -257,9 +274,11 @@
 
         <div class="olap-card">
           <h3>Đối chiếu khối (Drill-across)</h3>
-          <p class="desc">So sánh doanh số vs tồn kho cùng chiều thời gian</p>
+          <p class="desc">Ghép doanh số và tồn kho trên chiều dùng chung: thời gian và vị trí</p>
           <div class="form-row">
-            <div class="field"><label for="olap-field-15">Nhóm</label><select id="olap-field-15" data-da="nhom"><option value="nam">Năm</option><option value="quy">Quý</option><option value="thang">Tháng</option></select>
+            <div class="field"><label for="olap-field-15">Thời gian</label><select id="olap-field-15" data-da="nhom"><option value="nam">Năm</option><option value="quy">Quý</option><option value="thang">Tháng</option><option value="none">Tổng hợp</option></select>
+            </div>
+            <div class="field"><label for="olap-field-15b">Vị trí</label><select id="olap-field-15b" data-da="vi_tri"><option value="none">Tổng hợp</option><option value="tinh">Bang</option><option value="tp">Thành phố</option><option value="ch">Cửa hàng</option></select>
             </div>
             <button class="ghost" onclick="runDrillAcross()">Thực hiện</button>
           </div>
@@ -268,10 +287,11 @@
 
         <div class="olap-card">
           <h3>Xem giao dịch gốc (Drill-through)</h3>
-          <p class="desc">Xem giao dịch gốc — query thẳng Fact_BanHang</p>
+          <p class="desc">Xem từng lần cấp hàng của dòng đơn gốc (tầng IDB tích hợp)</p>
           <div class="form-row">
             <div class="field"><label for="olap-field-16">Mã khách hàng</label><input id="olap-field-16" type="text" data-dt="kh_key" placeholder="Không bắt buộc" /></div>
             <div class="field"><label for="olap-field-17">Mã mặt hàng</label><input id="olap-field-17" type="text" data-dt="mh_key" placeholder="Không bắt buộc" /></div>
+            <div class="field"><label for="olap-field-17b">Mã cửa hàng</label><input id="olap-field-17b" type="text" data-dt="ch_key" placeholder="Không bắt buộc" /></div>
             <div class="field"><label for="olap-field-18">Năm</label><input id="olap-field-18" type="number" data-dt="nam" placeholder="Không bắt buộc" /></div>
             <button class="ghost" onclick="runDrillThrough()">Thực hiện</button>
           </div>

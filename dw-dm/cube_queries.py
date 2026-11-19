@@ -1,12 +1,20 @@
-"""Build parameterized ROLAP queries for the supported display axes and filters."""
+"""Build parameterized ROLAP queries for the supported display axes and filters.
 
-TIME_COLS = {"none": [], "nam": ["nam"], "quy": ["nam", "quy"], "thang": ["nam", "quy", "thang"]}
-PRODUCT_COLS = {"none": [], "mh": ["mh_key", "mo_ta"]}
-CUSTOMER_COLS = {"none": [], "loai_kh": ["loai_kh"], "kh": ["kh_key", "ten", "loai_kh"]}
-LOCATION_COLS = {"none": [], "tinh": ["bang"], "tp": ["bang", "ten_tp"], "ch": ["ch_key"]}
-DIM_COLS_DS = {**TIME_COLS, **PRODUCT_COLS, **CUSTOMER_COLS}
+Each query reads the smallest materialized cuboid that still contains every displayed axis
+and every filtered column, then groups to the displayed axes.
+"""
+from cube_schema import (TIME_COLS, PRODUCT_COLS, CUSTOMER_COLS, LOCATION_COLS,
+                         SALES_AXES, INVENTORY_AXES, cuboid_name)
+
+DIM_COLS_DS = {**TIME_COLS, **PRODUCT_COLS, **CUSTOMER_COLS, **LOCATION_COLS}
 DIM_COLS_TK = {**TIME_COLS, **PRODUCT_COLS, **LOCATION_COLS}
-TIME_LEVELS = ["none", "nam", "quy", "thang"]
+TOTAL_COLUMN = "_tong_dong"
+
+# Filter column -> (axis, minimal level that contains it)
+FILTER_LEVEL = {"nam": ("time", "nam"), "quy": ("time", "quy"), "thang": ("time", "thang"),
+                "ngay": ("time", "ngay"), "mh_key": ("mh", "mh"), "loai_kh": ("kh", "loai_kh"),
+                "kh_key": ("kh", "kh"), "bang": ("loc", "tinh"), "ten_tp": ("loc", "tp"),
+                "ch_key": ("loc", "ch")}
 
 
 def axis_columns(value, allowed):
@@ -29,55 +37,59 @@ def filter_clause(filters, allowed):
     return ("WHERE " + " AND ".join(clauses) if clauses else ""), [value for _, value in selected]
 
 
-def aggregate_sql(table, dims, measures, where):
+def aggregate_sql(table, dims, measures, where, limit=None):
     selection = dims + [f"SUM({measure}) AS {measure}" for measure in measures]
-    sql = f"SELECT {', '.join(selection)} FROM {table} {where}"
-    if dims:
-        sql += f" GROUP BY {', '.join(dims)} ORDER BY {', '.join(dims)}"
-    return sql
+    if not dims:
+        return f"SELECT {', '.join(selection)} FROM {table} {where}", []
+    # COUNT(*) OVER() counts grouped rows before paging, so the API can report truncation.
+    sql = (f"SELECT {', '.join(selection)}, COUNT(*) OVER() AS {TOTAL_COLUMN} FROM {table} {where} "
+           f"GROUP BY {', '.join(dims)} ORDER BY {', '.join(dims)}")
+    if limit is None:
+        return sql, []
+    return sql + " OFFSET 0 ROWS FETCH NEXT ? ROWS ONLY", [int(limit)]
 
 
-def sales_query(time_axis="none", mh_axis="none", kh_axis="none", **filters):
-    dims = axis_columns(time_axis, TIME_COLS) + axis_columns(mh_axis, PRODUCT_COLS) + axis_columns(kh_axis, CUSTOMER_COLS)
-    where, params = filter_clause(filters, {"nam", "quy", "thang", "mh_key", "kh_key", "loai_kh"})
+def required_levels(axes, chosen, active):
+    """Finest level per axis needed by the displayed axis and the filters."""
+    levels = []
+    for name, _, order in axes:
+        needed = [chosen[name]] + [FILTER_LEVEL[key][1] for key in active if FILTER_LEVEL[key][0] == name]
+        if any(level not in order for level in needed):
+            raise ValueError(f"Chiều không hợp lệ: {chosen[name]}")
+        levels.append(max(needed, key=order.index))
+    return levels
+
+
+def sales_query(time_axis="none", mh_axis="none", kh_axis="none", loc_axis="none", limit=None, **filters):
+    chosen = {"time": time_axis, "mh": mh_axis, "kh": kh_axis, "loc": loc_axis}
+    dims = (axis_columns(time_axis, TIME_COLS) + axis_columns(mh_axis, PRODUCT_COLS)
+            + axis_columns(kh_axis, CUSTOMER_COLS) + axis_columns(loc_axis, LOCATION_COLS))
+    where, params = filter_clause(filters, {"nam", "quy", "thang", "mh_key", "kh_key", "loai_kh",
+                                            "bang", "ten_tp", "ch_key"})
     active = {key for key, value in filters.items() if value is not None and value != ""}
-    needed_time = max([TIME_LEVELS.index(time_axis)] + [TIME_LEVELS.index(key) for key in active & {"nam", "quy", "thang"}])
-    product = "mh" if mh_axis == "mh" or "mh_key" in active else "none"
-    customer = "kh" if kh_axis == "kh" or "kh_key" in active else "loai_kh" if kh_axis == "loai_kh" or "loai_kh" in active else "none"
-    levels = [TIME_LEVELS[needed_time], product, customer]
-    suffix = "_".join(level for level in levels if level != "none") or "all"
-    table = "olap_ds_" + suffix
-    sql = aggregate_sql(table, dims, ["tong_so_luong", "tong_doanh_thu"], where)
-    return table, dims, sum(level != "none" for level in (time_axis, mh_axis, kh_axis)), sql, params
+    table = cuboid_name("ds", required_levels(SALES_AXES, chosen, active))
+    sql, extra = aggregate_sql(table, dims, ["tong_so_luong", "tong_doanh_thu"], where, limit)
+    return table, dims, sum(level != "none" for level in chosen.values()), sql, params + extra
 
 
-def inventory_query(dw_database, time_axis="none", mh_axis="none", loc_axis="none", **filters):
+def inventory_query(time_axis="none", mh_axis="none", loc_axis="none", limit=None, **filters):
+    chosen = {"time": time_axis, "mh": mh_axis, "loc": loc_axis}
+    if time_axis == "ngay":
+        raise ValueError("Tồn kho chỉ có snapshot theo tháng, không có cấp ngày")
     dims = axis_columns(time_axis, TIME_COLS) + axis_columns(mh_axis, PRODUCT_COLS) + axis_columns(loc_axis, LOCATION_COLS)
     where, params = filter_clause(filters, {"nam", "quy", "thang", "mh_key", "bang", "ten_tp", "ch_key"})
+    lattice = sum(level != "none" for level in chosen.values())
     if not params:
-        suffix = "_".join(x for x in (time_axis, mh_axis, loc_axis) if x != "none") or "all"
-        table = "olap_tk_" + suffix
-        sql = "SELECT " + ", ".join(dims + ["tong_ton_kho"]) + " FROM " + table
-        if dims:
-            sql += " ORDER BY " + ", ".join(dims)
-        return table, dims, sum(x != "none" for x in (time_axis, mh_axis, loc_axis)), sql, params
-    # Select the last monthly balance per store/product inside the filtered period.
-    # Keeping store and product until after ranking prevents sums across snapshots.
+        table = cuboid_name("tk", [time_axis, mh_axis, loc_axis])
+        sql, extra = aggregate_sql(table, dims, ["tong_ton_kho"], "", limit)
+        return table, dims, lattice, sql, extra
+    # Semi-additive: select the last monthly balance per store/product inside the filtered
+    # period on the finest cuboid, then add across stores/products. Never add months together.
     partitions = ["ch_key", "mh_key"] + TIME_COLS[time_axis]
     table = "olap_tk_thang_mh_ch"
-    sql = f"""
-        WITH enriched AS (
-            SELECT b.*, v.bang, v.ten_tp
-            FROM {table} b
-            JOIN [{dw_database}].dbo.Dim_CuaHang c ON c.ch_key = b.ch_key
-            JOIN [{dw_database}].dbo.Dim_VPDD v ON v.vp_key = c.vp_key
-        ), filtered AS (
-            SELECT * FROM enriched {where}
-        ), ranked AS (
-            SELECT *, ROW_NUMBER() OVER (
-                PARTITION BY {', '.join(partitions)} ORDER BY nam DESC, thang DESC
-            ) AS snapshot_rank FROM filtered
-        )
-        {aggregate_sql('ranked', dims, ['tong_ton_kho'], 'WHERE snapshot_rank = 1')}
-    """
-    return table, dims, sum(level != "none" for level in (time_axis, mh_axis, loc_axis)), sql, params
+    ranked = f"""(
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY {', '.join(partitions)} ORDER BY nam DESC, thang DESC) AS snapshot_rank
+            FROM {table} {where}
+        ) ranked"""
+    sql, extra = aggregate_sql(ranked, dims, ["tong_ton_kho"], "WHERE snapshot_rank = 1", limit)
+    return table, dims, lattice, sql, params + extra

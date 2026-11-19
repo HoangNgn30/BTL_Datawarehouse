@@ -50,38 +50,40 @@ FROM (VALUES (1,N'New York',N'New York'),(2,N'Buffalo',N'New York'),(3,N'Los Ang
              (7,N'Miami',N'Florida'),(8,N'Orlando',N'Florida'),(9,N'Chicago',N'Illinois'),
              (10,N'Seattle',N'Washington'),(11,N'Boston',N'Massachusetts'),(12,N'Denver',N'Colorado')) v(id,tp,bang);
 
--- 30 cua hang (moi thanh pho >= 2 cua hang)
+-- 50 cua hang (moi thanh pho 4-5 cua hang)
 INSERT CuaHang (MaCuaHang, MaThanhPho, SoDienThoai)
 SELECT i, (i-1)%12+1, '0' + CAST(900000000 + i*7919 AS VARCHAR(12))
-FROM (SELECT TOP (30) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects) x;
+FROM (SELECT TOP (50) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects) x;
 
--- 60 mat hang
+-- 100 mat hang
 INSERT MatHang (MaMH, MoTa, KichCo, TrongLuong, Gia)
 SELECT i, N'Mat hang ' + CAST(i AS NVARCHAR(10)), CHOOSE(i%3+1, N'S', N'M', N'L'),
        CAST(0.2 + (ABS(CHECKSUM(i*31))%500)/100.0 AS DECIMAL(10,2)),
        CAST(10 + ABS(CHECKSUM(i*57))%490 AS DECIMAL(18,2))
-FROM (SELECT TOP (60) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects) x;
+FROM (SELECT TOP (100) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects) x;
 
--- ton kho DAU KY 2021-01-01 (~55% cap cua hang x mat hang); 01b tru xuat kho
+-- ton kho DAU KY 2021-01-01 (~70% cap cua hang x mat hang). Muc nay cung la muc ton muc tieu
+-- khi nhap bo sung dinh ky; scripts/allocate_orders.py ghi nhap/xuat va so du cuoi thang.
 INSERT MatHangLuuTru (MaCuaHang, MaMH, SoLuongTrongKho, ThoiGian)
-SELECT c.MaCuaHang, m.MaMH, 50 + ABS(CHECKSUM(c.MaCuaHang*131 + m.MaMH*7))%450, '2023-12-31'
+SELECT c.MaCuaHang, m.MaMH, 60 + ABS(CHECKSUM(c.MaCuaHang*131 + m.MaMH*7))%240, '2021-01-01'
 FROM CuaHang c CROSS JOIN MatHang m
-WHERE ABS(CHECKSUM(c.MaCuaHang*977 + m.MaMH))%100 < 55;
+-- Bam MD5 de danh muc moi cua hang khac nhau: vai thanh pho khong co mat hang nao do, don phai chuyen sang thanh pho khac.
+WHERE ABS(CAST(SUBSTRING(HASHBYTES('MD5', CONCAT(c.MaCuaHang, '-', m.MaMH)), 1, 4) AS INT)) % 100 < 70;
 
--- 1500 don hang cua 300 khach hang, 2021-2023
+-- 55.000 don hang cua 5.000 khach hang, 2021-2023
 INSERT DonDatHang (MaDon, NgayDatHang, MaKH)
-SELECT i, DATEADD(DAY, ABS(CHECKSUM(i*104729))%1095, '2021-01-01'), ABS(CHECKSUM(i*6007))%300 + 1
-FROM (SELECT TOP (1500) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects a CROSS JOIN sys.all_objects b) x;
+SELECT i, DATEADD(DAY, ABS(CHECKSUM(i*104729))%1095, '2021-01-01'), ABS(CHECKSUM(i*6007))%5000 + 1
+FROM (SELECT TOP (55000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects a CROSS JOIN sys.all_objects b) x;
 
--- 1..3 dong / don (mat hang khac nhau)
+-- 1..3 dong / don (mat hang khac nhau), trung binh ~2,1 dong
 INSERT MatHangDuocDat (MaDon, MaMH, SoLuongDat, GiaDat, ThoiGian)
-SELECT d.MaDon, ((b.base + k.k*17) % 60) + 1, 1 + ABS(CHECKSUM(d.MaDon*13 + k.k))%10,
+SELECT d.MaDon, ((b.base + k.k*17) % 100) + 1, 1 + ABS(CHECKSUM(d.MaDon*13 + k.k))%10,
        CAST(m.Gia * (0.9 + (ABS(CHECKSUM(d.MaDon*3 + k.k))%21)/100.0) AS DECIMAL(18,2)), d.NgayDatHang
 FROM DonDatHang d
 CROSS JOIN (VALUES (0),(1),(2)) k(k)
-CROSS APPLY (SELECT ABS(CHECKSUM(d.MaDon*2711))%60 AS base) b
-JOIN MatHang m ON m.MaMH = ((b.base + k.k*17) % 60) + 1
-WHERE k.k = 0 OR ABS(CHECKSUM(d.MaDon*53 + k.k))%100 < 50;
+CROSS APPLY (SELECT ABS(CHECKSUM(d.MaDon*2711))%100 AS base) b
+JOIN MatHang m ON m.MaMH = ((b.base + k.k*17) % 100) + 1
+WHERE k.k = 0 OR ABS(CHECKSUM(d.MaDon*53 + k.k))%100 < 55;
 GO
 
 /* ===================== IDB_VPDD ===================== */
@@ -98,7 +100,7 @@ GO
 
 INSERT KhachHang (MaKH, TenKH, MaThanhPho)
 SELECT i, N'Khach hang ' + CAST(i AS NVARCHAR(10)), ABS(CHECKSUM(i*911))%12 + 1
-FROM (SELECT TOP (300) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects) x;
+FROM (SELECT TOP (5000) ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) i FROM sys.all_objects a CROSS JOIN sys.all_objects b) x;
 
 UPDATE k SET NgayDatHangDauTien =
     (SELECT MIN(d.NgayDatHang) FROM IDB_BanHang.dbo.DonDatHang d WHERE d.MaKH = k.MaKH)

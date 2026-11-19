@@ -95,6 +95,28 @@ def bootstrap():
             print(f'Demo bootstrap -> Oracle {table}: {len(rows)} rows')
     print('Bootstrap complete. Future extraction reads Oracle; SQL demo is not the customer authority.')
 
+def reset_demo():
+    """Demo only: empty the three Oracle customer tables, then bootstrap them again from IDB_VPDD.
+
+    Used when the SQL demo source was regenerated with a new size. It never drops tables and
+    refuses to run if IDB_VPDD is empty, so the Oracle source is not left without customers.
+    """
+    with sql_connection('IDB_VPDD') as sql:
+        if not sql.cursor().execute('SELECT COUNT(*) FROM dbo.KhachHang').fetchone()[0]:
+            raise RuntimeError('Empty SQL customer seed; reset refuses to empty Oracle.')
+    with oracle_connection() as ora:
+        existing={row[0] for row in ora.cursor().execute('SELECT table_name FROM user_tables')}
+        try:
+            for table in reversed(list(TABLES)):
+                if table.upper() in existing:
+                    ora.cursor().execute(f'DELETE FROM {table}')
+            ora.commit()
+        except Exception:
+            ora.rollback()
+            raise
+    print('Oracle demo customer tables emptied; loading the current SQL demo seed.')
+    bootstrap()
+
 def prepare_stage():
     with sql_connection('master') as cn:
         cn.autocommit=True
@@ -157,8 +179,9 @@ def verify(check_dw=True):
 
 if __name__=='__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action',choices=['bootstrap-demo','extract','verify','verify-stage'])
+    parser.add_argument('action',choices=['bootstrap-demo','reset-demo','extract','verify','verify-stage'])
     args=parser.parse_args()
     if args.action=='bootstrap-demo':bootstrap()
+    elif args.action=='reset-demo':reset_demo()
     elif args.action=='extract':extract()
     else:verify(args.action=='verify')
