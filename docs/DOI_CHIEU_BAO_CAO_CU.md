@@ -1,5 +1,7 @@
 # Đối chiếu báo cáo PDF cũ với thang điểm và bản cài đặt
 
+> **Lưu ý (21/11/2026):** tài liệu này viết khi kho còn thiết kế cũ (3 fact, 56 cuboid, 300 khách/1.500 đơn). Các nhận xét về **lỗi trong PDF báo cáo cũ** vẫn dùng được khi viết lại báo cáo. Các câu mô tả **trạng thái cài đặt** đã lỗi thời: IDB tích hợp, metadata và index đều đã cài; thiết kế hiện tại là 2 fact (Fact_BanHang khóa ngày–khách–mặt hàng–cửa hàng, Fact_Kho), 152 cuboid, 5.000 khách/55.000 đơn. Xem BAO_CAO.md, CUBOID_SPEC.md, KIEM_THU.md.
+
 Nguồn: `D:\KDL&KPDL\Báo cáo BTL Kho dữ liệu.pdf`, 65 trang. Số trang dưới đây là vị trí trang trong PDF. Đã trích xuất văn bản toàn bộ tài liệu và xem ảnh các trang sơ đồ 7, 10, 12, 13, 14. Đây là bản nhận xét; chưa chỉnh sửa PDF gốc.
 
 ## Điều chỉnh kết luận sau khi nhận PDF
